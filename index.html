@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบทะเบียนคุมหนังสือรับออนไลน์</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Sarabun', 'Inter', sans-serif;
+            background-color: #f1f5f9;
+        }
+        .modern-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);
+        }
+        .loading-spinner {
+            border: 3px solid rgba(255,255,255,0.3);
+            border-top: 3px solid #ffffff;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        #toast {
+            visibility: hidden;
+            min-width: 280px;
+            border-radius: 16px;
+            padding: 16px;
+            position: fixed;
+            z-index: 100;
+            right: 30px;
+            top: 30px;
+            transition: all 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        #toast.show {
+            visibility: visible;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        @media print { 
+            .no-print { display: none; }
+            body { background-color: white; padding: 0; }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-10 text-slate-900">
+
+    <!-- Toast Notification -->
+    <div id="toast" class="flex items-center gap-3 text-white shadow-2xl">
+        <div id="toastIcon"></div>
+        <span id="toastMessage" class="font-bold text-lg">ดำเนินการสำเร็จ</span>
+    </div>
+
+    <div class="max-w-7xl mx-auto print-container">
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row justify-between items-end mb-10 gap-6">
+            <div>
+                <div class="flex items-center gap-3 mb-2">
+                    <div class="p-3 bg-indigo-600 rounded-2xl shadow-lg no-print">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                        </svg>
+                    </div>
+                    <h1 class="text-3xl font-extrabold text-slate-900">ทะเบียนคุมหนังสือรับออนไลน์</h1>
+                </div>
+                <p class="text-slate-500 font-medium ml-1">ปีงบประมาณ 2569 • โรงเรียนบ้านดุซงยอ</p>
+            </div>
+            
+            <div class="flex gap-3 no-print">
+                <button onclick="fetchData()" class="flex items-center gap-2 px-5 py-2.5 bg-white text-slate-700 font-semibold rounded-xl border border-slate-200 hover:bg-slate-50 transition-all active:scale-95 shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    รีเฟรชข้อมูล
+                </button>
+                <button onclick="window.print()" class="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 shadow-lg">
+                    พิมพ์รายงาน
+                </button>
+            </div>
+        </div>
+
+        <!-- Input Form Card -->
+        <div id="formSection" class="modern-card p-8 rounded-3xl mb-10 no-print border-t-4 border-t-indigo-500 transition-all duration-500">
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-2">
+                    <div id="formStatusIndicator" class="w-1.5 h-6 bg-indigo-500 rounded-full"></div>
+                    <h2 id="formTitle" class="text-xl font-bold text-slate-800">ลงทะเบียนหนังสือเข้าใหม่</h2>
+                </div>
+                <button id="cancelEditBtn" onclick="cancelEdit()" class="hidden flex items-center gap-1 text-sm text-red-500 hover:text-red-700 font-bold transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    ยกเลิกการแก้ไข
+                </button>
+            </div>
+            
+            <form id="recordForm" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <input type="hidden" id="rowIndex" name="rowIndex">
+                
+                <div class="space-y-1.5">
+                    <label class="text-sm font-bold text-slate-700 ml-1">วัน/เดือน/ปี ที่รับ</label>
+                    <input type="date" id="date_received" name="date_received" required class="w-full p-3 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-100 outline-none transition-all">
+                </div>
+                <div class="space-y-1.5">
+                    <label class="text-sm font-bold text-slate-700 ml-1">เลขทะเบียนรับ</label>
+                    <input type="text" id="reg_no" name="reg_no" required placeholder="1/2569" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-semibold text-indigo-700">
+                </div>
+                <div class="space-y-1.5">
+                    <label class="text-sm font-bold text-slate-700 ml-1">เลขที่หนังสือ (ที่)</label>
+                    <input type="text" id="doc_no" name="doc_no" required placeholder="ศธ 04xxx/..." class="w-full p-3 bg-white border border-slate-200 rounded-2xl outline-none transition-all">
+                </div>
+                <div class="space-y-1.5">
+                    <label class="text-sm font-bold text-slate-700 ml-1">ลงวันที่ (ในหนังสือ)</label>
+                    <input type="date" id="doc_date" name="doc_date" required class="w-full p-3 bg-white border border-slate-200 rounded-2xl outline-none transition-all">
+                </div>
+                <div class="space-y-1.5">
+                    <label class="text-sm font-bold text-slate-700 ml-1">จาก</label>
+                    <input type="text" id="from_dept" name="from_dept" required placeholder="ชื่อหน่วยงานต้นทาง" class="w-full p-3 bg-white border border-slate-200 rounded-2xl outline-none transition-all">
+                </div>
+                <div class="space-y-1.5">
+                    <label class="text-sm font-bold text-slate-700 ml-1">ถึง</label>
+                    <input type="text" id="to_dept" name="to_dept" required placeholder="ผู้อำนวยการ" class="w-full p-3 bg-white border border-slate-200 rounded-2xl outline-none transition-all">
+                </div>
+                <div class="md:col-span-2 space-y-1.5">
+                    <label class="text-sm font-bold text-slate-700 ml-1">เรื่อง</label>
+                    <input type="text" id="subject" name="subject" required placeholder="ระบุชื่อเรื่องของหนังสือ" class="w-full p-3 bg-white border border-slate-200 rounded-2xl outline-none transition-all">
+                </div>
+                <div class="lg:col-span-4 flex justify-end mt-2">
+                    <button type="submit" id="submitBtn" class="w-full md:w-48 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-2xl shadow-lg transition-all active:scale-95 disabled:bg-slate-300">
+                        <span id="btnText">บันทึกข้อมูล</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="flex flex-col md:flex-row gap-4 mb-6 no-print">
+            <div class="relative flex-grow">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </span>
+                <input type="text" id="searchTerm" onkeyup="renderTable()" placeholder="ค้นหาด้วย เลขที่, เรื่อง, หรือหน่วยงาน..." class="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl outline-none shadow-sm focus:ring-4 focus:ring-indigo-100">
+            </div>
+            <div class="flex items-center px-6 py-4 bg-indigo-50 rounded-2xl border border-indigo-100 text-indigo-700 font-semibold">
+                <span id="recordCount" class="mr-2">0</span> รายการทั้งหมด
+            </div>
+        </div>
+
+        <!-- Table Card -->
+        <div class="bg-white rounded-[2rem] shadow-xl border border-slate-200 overflow-hidden">
+            <div class="table-container overflow-x-auto">
+                <table class="w-full text-left border-collapse min-w-[1100px]">
+                    <thead class="bg-slate-50 text-slate-500 text-[13px] font-bold uppercase tracking-wider">
+                        <tr>
+                            <th class="p-5 border-b border-slate-100 text-center">วันที่รับ</th>
+                            <th class="p-5 border-b border-slate-100 text-center">เลขทะเบียนรับ</th>
+                            <th class="p-5 border-b border-slate-100 text-center">ที่</th>
+                            <th class="p-5 border-b border-slate-100 text-center">ลงวันที่</th>
+                            <th class="p-5 border-b border-slate-100">จาก</th>
+                            <th class="p-5 border-b border-slate-100">ถึง</th>
+                            <th class="p-5 border-b border-slate-100 w-1/4">เรื่อง</th>
+                            <th class="p-5 border-b border-slate-100 text-center no-print">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="text-[14px] text-slate-600 divide-y divide-slate-50">
+                        <tr><td colspan="8" class="p-20 text-center">
+                            <div class="loading-spinner border-indigo-500 mb-4"></div>
+                            <p class="text-slate-400 italic">กำลังเชื่อมต่อข้อมูล...</p>
+                        </td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz_iEJJKdptDUKMWKRXXa-pqUT6MQnyzMIr_YSSxLohS3I5eo26WBrsoAE33yNCvy4_bA/exec"; 
+        let records = [];
+        let isEditing = false;
+
+        async function fetchData() {
+            try {
+                const response = await fetch(SCRIPT_URL);
+                const data = await response.json();
+                
+                records = (Array.isArray(data) ? data : []).map((row, index) => {
+                    const vals = Object.values(row);
+                    return {
+                        rowIndex: index + 2,
+                        date_received: parseAndFormatDate(vals[0]),
+                        reg_no: vals[1] || '-',
+                        doc_no: vals[2] || '-',
+                        doc_date: parseAndFormatDate(vals[3]),
+                        from_dept: vals[4] || '-',
+                        to_dept: vals[5] || '-',
+                        subject: vals[6] || '-'
+                    };
+                }); 
+                
+                if (!isEditing) setNextRegNo();
+                renderTable();
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('tableBody').innerHTML = '<tr><td colspan="8" class="p-10 text-center text-red-500 font-bold">⚠️ ไม่สามารถเชื่อมต่อฐานข้อมูลได้</td></tr>';
+            }
+        }
+
+        function parseAndFormatDate(rawDate) {
+            if (!rawDate) return "-";
+            const dateObj = new Date(rawDate);
+            if (!isNaN(dateObj.getTime())) {
+                return formatThaiDateFull(dateObj);
+            }
+            return rawDate;
+        }
+
+        const form = document.getElementById('recordForm');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submitBtn');
+            const btnText = document.getElementById('btnText');
+            
+            submitBtn.disabled = true;
+            btnText.innerHTML = '<span class="loading-spinner"></span> กำลังบันทึก...';
+
+            const formData = new FormData(form);
+            const rawData = Object.fromEntries(formData.entries());
+
+            const dataToSave = {
+                action: isEditing ? 'update' : 'insert',
+                rowIndex: rawData.rowIndex,
+                date_received: formatThaiDateFull(new Date(rawData.date_received)),
+                reg_no: rawData.reg_no,
+                doc_no: rawData.doc_no,
+                doc_date: formatThaiDateFull(new Date(rawData.doc_date)),
+                from_dept: rawData.from_dept,
+                to_dept: rawData.to_dept,
+                subject: rawData.subject
+            };
+
+            try {
+                await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: JSON.stringify(dataToSave),
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                setTimeout(async () => {
+                    showToast(isEditing ? "แก้ไขข้อมูลสำเร็จแล้ว" : "บันทึกข้อมูลสำเร็จแล้ว", "emerald");
+                    cancelEdit();
+                    await fetchData(); 
+                }, 1000);
+
+            } catch (error) {
+                showToast("เกิดข้อผิดพลาดในการบันทึก", "red");
+                console.error(error);
+            } finally {
+                submitBtn.disabled = false;
+                btnText.innerText = 'บันทึกข้อมูล';
+            }
+        });
+
+        function editRecord(rowIndex) {
+            const item = records.find(r => r.rowIndex === rowIndex);
+            if (!item) return;
+
+            isEditing = true;
+            const formSection = document.getElementById('formSection');
+            formSection.classList.replace('border-t-indigo-500', 'border-t-orange-400');
+            document.getElementById('formStatusIndicator').classList.replace('bg-indigo-500', 'bg-orange-400');
+            document.getElementById('formTitle').innerText = "แก้ไขข้อมูลรายการที่ " + item.reg_no;
+            document.getElementById('btnText').innerText = "บันทึกการแก้ไข";
+            document.getElementById('cancelEditBtn').classList.remove('hidden');
+
+            document.getElementById('rowIndex').value = item.rowIndex;
+            document.getElementById('reg_no').value = item.reg_no;
+            document.getElementById('doc_no').value = item.doc_no;
+            document.getElementById('from_dept').value = item.from_dept;
+            document.getElementById('to_dept').value = item.to_dept;
+            document.getElementById('subject').value = item.subject;
+            
+            document.getElementById('date_received').value = convertThaiDateToISO(item.date_received);
+            document.getElementById('doc_date').value = convertThaiDateToISO(item.doc_date);
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function cancelEdit() {
+            isEditing = false;
+            form.reset();
+            const formSection = document.getElementById('formSection');
+            formSection.classList.replace('border-t-orange-400', 'border-t-indigo-500');
+            document.getElementById('formStatusIndicator').classList.replace('bg-orange-400', 'bg-indigo-500');
+            document.getElementById('formTitle').innerText = "ลงทะเบียนหนังสือเข้าใหม่";
+            document.getElementById('btnText').innerText = "บันทึกข้อมูล";
+            document.getElementById('cancelEditBtn').classList.add('hidden');
+            setDefaults();
+        }
+
+        function showToast(message, colorClass) {
+            const toast = document.getElementById("toast");
+            const toastMsg = document.getElementById("toastMessage");
+            toast.className = `flex items-center gap-3 text-white shadow-2xl bg-${colorClass}-500 show`;
+            toastMsg.innerText = message;
+            setTimeout(() => { toast.classList.remove("show"); }, 3000);
+        }
+
+        function renderTable() {
+            const tableBody = document.getElementById('tableBody');
+            const searchTerm = document.getElementById('searchTerm').value.toLowerCase();
+            const filtered = records.filter(r => 
+                Object.values(r).some(val => String(val).toLowerCase().includes(searchTerm))
+            ).reverse();
+
+            document.getElementById('recordCount').innerText = filtered.length;
+
+            tableBody.innerHTML = filtered.map(r => `
+                <tr class="hover:bg-indigo-50/40 transition-colors group">
+                    <td class="p-5 text-center font-semibold text-slate-800">${r.date_received}</td>
+                    <td class="p-5 text-center">
+                        <span class="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full font-bold text-xs">${r.reg_no}</span>
+                    </td>
+                    <td class="p-5 text-center text-slate-500 font-medium">${r.doc_no}</td>
+                    <td class="p-5 text-center text-slate-500 font-medium">${r.doc_date}</td>
+                    <td class="p-5 font-medium text-slate-700">${r.from_dept}</td>
+                    <td class="p-5 font-medium text-slate-700">${r.to_dept}</td>
+                    <td class="p-5 font-bold text-slate-900 leading-relaxed">${r.subject}</td>
+                    <td class="p-5 text-center no-print">
+                        <div class="flex justify-center">
+                            <button onclick="editRecord(${r.rowIndex})" class="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition-all active:scale-90">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+            if (filtered.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="8" class="p-20 text-center text-slate-400 italic">ไม่พบข้อมูลที่ต้องการ</td></tr>';
+            }
+        }
+
+        // ปรับปรุงฟังก์ชันรันเลขทะเบียนใหม่
+        function setNextRegNo() {
+            let maxNum = 0; 
+            const currentYear = "2569";
+            
+            records.forEach(r => {
+                if (r.reg_no && typeof r.reg_no === 'string' && r.reg_no.includes('/' + currentYear)) {
+                    const parts = r.reg_no.split('/');
+                    const num = parseInt(parts[0]);
+                    if (!isNaN(num) && num > maxNum) maxNum = num;
+                }
+            });
+            
+            document.getElementById('reg_no').value = (maxNum + 1) + "/" + currentYear;
+        }
+
+        function formatThaiDateFull(date) {
+            if (!(date instanceof Date) || isNaN(date.getTime())) return "-";
+            const monthsFull = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+            const day = date.getDate();
+            const month = monthsFull[date.getMonth()];
+            let year = date.getFullYear();
+            if (year < 2400) year += 543;
+            return `${day} ${month} ${year}`;
+        }
+
+        function convertThaiDateToISO(thaiStr) {
+            if (!thaiStr || thaiStr === '-') return "";
+            const monthsFull = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+            const parts = thaiStr.split(' ');
+            if (parts.length < 3) return "";
+            const day = parts[0].padStart(2, '0');
+            const monthIndex = monthsFull.indexOf(parts[1]);
+            const month = (monthIndex + 1).toString().padStart(2, '0');
+            let year = parseInt(parts[2]) - 543;
+            return `${year}-${month}-${day}`;
+        }
+
+        function setDefaults() {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('date_received').value = today;
+            document.getElementById('doc_date').value = today;
+            document.getElementById('to_dept').value = "ผู้อำนวยการ";
+            if (!isEditing) setNextRegNo();
+        }
+
+        window.onload = () => {
+            setDefaults();
+            fetchData();
+        };
+    </script>
+</body>
+</html>
