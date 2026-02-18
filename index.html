@@ -46,9 +46,17 @@
             opacity: 1;
             transform: translateY(0);
         }
+
+        /* สำหรับการพิมพ์รายงาน */
         @media print { 
-            .no-print { display: none; }
-            body { background-color: white; padding: 0; }
+            @page { size: landscape; margin: 1cm; }
+            .no-print { display: none !important; }
+            body { background-color: white; padding: 0; margin: 0; }
+            .print-container { max-width: 100% !important; width: 100% !important; margin: 0 !important; padding: 0 !important; }
+            .bg-white { border: none !important; box-shadow: none !important; }
+            table { width: 100% !important; border: 1px solid #000 !important; border-collapse: collapse !important; }
+            th, td { border: 1px solid #333 !important; padding: 8px !important; color: black !important; font-size: 12px !important; }
+            thead { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; }
         }
     </style>
 </head>
@@ -82,7 +90,10 @@
                     </svg>
                     รีเฟรชข้อมูล
                 </button>
-                <button onclick="window.print()" class="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 shadow-lg">
+                <button onclick="handlePrint()" class="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 shadow-lg transition-all active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                    </svg>
                     พิมพ์รายงาน
                 </button>
             </div>
@@ -188,6 +199,7 @@
         const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz_iEJJKdptDUKMWKRXXa-pqUT6MQnyzMIr_YSSxLohS3I5eo26WBrsoAE33yNCvy4_bA/exec"; 
         let records = [];
         let isEditing = false;
+        let isPrintingMode = false;
 
         async function fetchData() {
             try {
@@ -317,12 +329,40 @@
             setTimeout(() => { toast.classList.remove("show"); }, 3000);
         }
 
+        // ฟังก์ชันจัดการการพิมพ์
+        function handlePrint() {
+            isPrintingMode = true;
+            renderTable(); // เรียงจากน้อยไปมาก
+            
+            // รอให้ DOM อัปเดตก่อนสั่งพิมพ์
+            setTimeout(() => {
+                window.print();
+                isPrintingMode = false;
+                renderTable(); // กลับมาเรียงแบบล่าสุดอยู่บนสุด
+            }, 500);
+        }
+
         function renderTable() {
             const tableBody = document.getElementById('tableBody');
             const searchTerm = document.getElementById('searchTerm').value.toLowerCase();
-            const filtered = records.filter(r => 
+            
+            // กรองข้อมูล
+            let filtered = records.filter(r => 
                 Object.values(r).some(val => String(val).toLowerCase().includes(searchTerm))
-            ).reverse();
+            );
+
+            // เงื่อนไขการเรียงลำดับ
+            if (isPrintingMode) {
+                // สำหรับพิมพ์: เรียงเลขทะเบียนรับจากน้อยไปหามาก (1, 2, 3...)
+                filtered.sort((a, b) => {
+                    const numA = parseInt(String(a.reg_no).split('/')[0]) || 0;
+                    const numB = parseInt(String(b.reg_no).split('/')[0]) || 0;
+                    return numA - numB;
+                });
+            } else {
+                // สำหรับหน้าจอปกติ: เรียงจากล่าสุดไปหาเก่า (Reverse Original Order)
+                filtered.reverse();
+            }
 
             document.getElementById('recordCount').innerText = filtered.length;
 
@@ -354,7 +394,6 @@
             }
         }
 
-        // ปรับปรุงฟังก์ชันรันเลขทะเบียนใหม่
         function setNextRegNo() {
             let maxNum = 0; 
             const currentYear = "2569";
