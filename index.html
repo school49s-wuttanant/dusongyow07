@@ -47,16 +47,45 @@
             transform: translateY(0);
         }
 
-        /* สำหรับการพิมพ์รายงาน */
+        /* Modal Animation */
+        .modal-backdrop { transition: opacity 0.3s ease; }
+        .modal-content { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+        /* Print Specific Styles */
         @media print { 
-            @page { size: landscape; margin: 1cm; }
+            @page { size: landscape; margin: 0.5cm; }
             .no-print { display: none !important; }
             body { background-color: white; padding: 0; margin: 0; }
             .print-container { max-width: 100% !important; width: 100% !important; margin: 0 !important; padding: 0 !important; }
             .bg-white { border: none !important; box-shadow: none !important; }
-            table { width: 100% !important; border: 1px solid #000 !important; border-collapse: collapse !important; }
-            th, td { border: 1px solid #333 !important; padding: 8px !important; color: black !important; font-size: 12px !important; }
+            
+            table { 
+                width: 100% !important; 
+                border: 1px solid #000 !important; 
+                border-collapse: collapse !important;
+                table-layout: fixed; /* บังคับสัดส่วนคอลัมน์ */
+            }
+            
+            th, td { 
+                border: 1px solid #333 !important; 
+                padding: 6px 4px !important; 
+                color: black !important; 
+                font-size: 11pt !important;
+                word-wrap: break-word; 
+                overflow-wrap: break-word;
+            }
+
+            /* กำหนดความกว้างคอลัมน์ในหน้าพิมพ์ */
+            th:nth-child(1), td:nth-child(1) { width: 12%; } /* วันที่รับ */
+            th:nth-child(2), td:nth-child(2) { width: 10%; } /* เลขทะเบียน */
+            th:nth-child(3), td:nth-child(3) { width: 12%; } /* ที่ */
+            th:nth-child(4), td:nth-child(4) { width: 10%; } /* ลงวันที่ */
+            th:nth-child(5), td:nth-child(5) { width: 12%; } /* จาก */
+            th:nth-child(6), td:nth-child(6) { width: 10%; } /* ถึง */
+            th:nth-child(7), td:nth-child(7) { width: 34%; } /* เรื่อง (ขยายกว้างสุด) */
+            
             thead { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; }
+            tr { page-break-inside: avoid; }
         }
     </style>
 </head>
@@ -66,6 +95,32 @@
     <div id="toast" class="flex items-center gap-3 text-white shadow-2xl">
         <div id="toastIcon"></div>
         <span id="toastMessage" class="font-bold text-lg">ดำเนินการสำเร็จ</span>
+    </div>
+
+    <!-- Summary Modal -->
+    <div id="summaryModal" class="fixed inset-0 z-[150] hidden">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm modal-backdrop"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4">
+            <div class="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden modal-content transform scale-95 opacity-0">
+                <div class="bg-indigo-600 p-8 text-white relative">
+                    <div class="absolute top-0 right-0 p-6 opacity-20">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-24 w-24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-2xl font-extrabold mb-1">บันทึกสำเร็จแล้ว</h3>
+                    <p class="text-indigo-100 font-medium">สรุปข้อมูลการลงทะเบียน</p>
+                </div>
+                <div class="p-8 space-y-4" id="summaryContent">
+                    <!-- Dynamic Content -->
+                </div>
+                <div class="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
+                    <button onclick="closeSummary()" class="px-8 py-3 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 transition-all active:scale-95 shadow-lg">
+                        รับทราบ
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="max-w-7xl mx-auto print-container">
@@ -80,7 +135,7 @@
                     </div>
                     <h1 class="text-3xl font-extrabold text-slate-900">ทะเบียนคุมหนังสือรับออนไลน์</h1>
                 </div>
-                <p class="text-slate-500 font-medium ml-1">ปีงบประมาณ 2569 • โรงเรียนบ้านดุซงยอ</p>
+                <p class="text-slate-500 font-medium ml-1">โรงเรียนบ้านดุซงยอ</p>
             </div>
             
             <div class="flex gap-3 no-print">
@@ -180,7 +235,7 @@
                             <th class="p-5 border-b border-slate-100 text-center">ลงวันที่</th>
                             <th class="p-5 border-b border-slate-100">จาก</th>
                             <th class="p-5 border-b border-slate-100">ถึง</th>
-                            <th class="p-5 border-b border-slate-100 w-1/4">เรื่อง</th>
+                            <th class="p-5 border-b border-slate-100">เรื่อง</th>
                             <th class="p-5 border-b border-slate-100 text-center no-print">จัดการ</th>
                         </tr>
                     </thead>
@@ -249,13 +304,16 @@
             const formData = new FormData(form);
             const rawData = Object.fromEntries(formData.entries());
 
+            const formattedReceived = formatThaiDateFull(new Date(rawData.date_received));
+            const formattedDocDate = formatThaiDateFull(new Date(rawData.doc_date));
+
             const dataToSave = {
                 action: isEditing ? 'update' : 'insert',
                 rowIndex: rawData.rowIndex,
-                date_received: formatThaiDateFull(new Date(rawData.date_received)),
+                date_received: formattedReceived,
                 reg_no: rawData.reg_no,
                 doc_no: rawData.doc_no,
-                doc_date: formatThaiDateFull(new Date(rawData.doc_date)),
+                doc_date: formattedDocDate,
                 from_dept: rawData.from_dept,
                 to_dept: rawData.to_dept,
                 subject: rawData.subject
@@ -271,6 +329,7 @@
                 
                 setTimeout(async () => {
                     showToast(isEditing ? "แก้ไขข้อมูลสำเร็จแล้ว" : "บันทึกข้อมูลสำเร็จแล้ว", "emerald");
+                    openSummary(dataToSave); 
                     cancelEdit();
                     await fetchData(); 
                 }, 1000);
@@ -283,6 +342,51 @@
                 btnText.innerText = 'บันทึกข้อมูล';
             }
         });
+
+        function openSummary(data) {
+            const modal = document.getElementById('summaryModal');
+            const content = document.getElementById('summaryContent');
+            const modalBox = modal.querySelector('.modal-content');
+
+            content.innerHTML = `
+                <div class="grid grid-cols-3 gap-4 border-b border-slate-50 pb-4">
+                    <div class="text-slate-400 text-sm font-bold">เลขทะเบียนรับ</div>
+                    <div class="col-span-2 text-indigo-700 font-extrabold text-lg">${data.reg_no}</div>
+                </div>
+                <div class="grid grid-cols-3 gap-4 border-b border-slate-50 pb-4">
+                    <div class="text-slate-400 text-sm font-bold">วันที่รับ</div>
+                    <div class="col-span-2 text-slate-700 font-semibold">${data.date_received}</div>
+                </div>
+                <div class="grid grid-cols-3 gap-4 border-b border-slate-50 pb-4">
+                    <div class="text-slate-400 text-sm font-bold">เลขที่หนังสือ</div>
+                    <div class="col-span-2 text-slate-700 font-semibold">${data.doc_no}</div>
+                </div>
+                <div class="grid grid-cols-3 gap-4 border-b border-slate-50 pb-4">
+                    <div class="text-slate-400 text-sm font-bold">จาก</div>
+                    <div class="col-span-2 text-slate-700 font-semibold">${data.from_dept}</div>
+                </div>
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="text-slate-400 text-sm font-bold">เรื่อง</div>
+                    <div class="col-span-2 text-slate-900 font-bold leading-relaxed">${data.subject}</div>
+                </div>
+            `;
+
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modalBox.classList.remove('scale-95', 'opacity-0');
+                modalBox.classList.add('scale-100', 'opacity-100');
+            }, 50);
+        }
+
+        function closeSummary() {
+            const modal = document.getElementById('summaryModal');
+            const modalBox = modal.querySelector('.modal-content');
+            modalBox.classList.replace('scale-100', 'scale-95');
+            modalBox.classList.replace('opacity-100', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200);
+        }
 
         function editRecord(rowIndex) {
             const item = records.find(r => r.rowIndex === rowIndex);
@@ -329,16 +433,13 @@
             setTimeout(() => { toast.classList.remove("show"); }, 3000);
         }
 
-        // ฟังก์ชันจัดการการพิมพ์
         function handlePrint() {
             isPrintingMode = true;
-            renderTable(); // เรียงจากน้อยไปมาก
-            
-            // รอให้ DOM อัปเดตก่อนสั่งพิมพ์
+            renderTable();
             setTimeout(() => {
                 window.print();
                 isPrintingMode = false;
-                renderTable(); // กลับมาเรียงแบบล่าสุดอยู่บนสุด
+                renderTable();
             }, 500);
         }
 
@@ -346,21 +447,17 @@
             const tableBody = document.getElementById('tableBody');
             const searchTerm = document.getElementById('searchTerm').value.toLowerCase();
             
-            // กรองข้อมูล
             let filtered = records.filter(r => 
                 Object.values(r).some(val => String(val).toLowerCase().includes(searchTerm))
             );
 
-            // เงื่อนไขการเรียงลำดับ
             if (isPrintingMode) {
-                // สำหรับพิมพ์: เรียงเลขทะเบียนรับจากน้อยไปหามาก (1, 2, 3...)
                 filtered.sort((a, b) => {
                     const numA = parseInt(String(a.reg_no).split('/')[0]) || 0;
                     const numB = parseInt(String(b.reg_no).split('/')[0]) || 0;
                     return numA - numB;
                 });
             } else {
-                // สำหรับหน้าจอปกติ: เรียงจากล่าสุดไปหาเก่า (Reverse Original Order)
                 filtered.reverse();
             }
 
