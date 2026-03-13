@@ -3,543 +3,338 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบทะเบียนคุมหนังสือรับออนไลน์</title>
+    <title>ระบบทะเบียนคุมหนังสือรับออนไลน์ (Hybrid Cloud)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js" type="module"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js" type="module"></script>
+
     <style>
-        body {
-            font-family: 'Sarabun', 'Inter', sans-serif;
-            background-color: #f1f5f9;
-        }
-        .modern-card {
-            background: rgba(255, 255, 255, 0.8);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);
-        }
-        .loading-spinner {
-            border: 3px solid rgba(255,255,255,0.3);
-            border-top: 3px solid #ffffff;
-            border-radius: 50%;
-            width: 18px;
-            height: 18px;
-            animation: spin 0.8s linear infinite;
-            display: inline-block;
-        }
+        body { font-family: 'Sarabun', 'Inter', sans-serif; background-color: #f1f5f9; }
+        .modern-card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); }
+        .loading-spinner { border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid #ffffff; border-radius: 50%; width: 18px; height: 18px; animation: spin 0.8s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        #toast {
-            visibility: hidden;
-            min-width: 280px;
-            border-radius: 16px;
-            padding: 16px;
-            position: fixed;
-            z-index: 100;
-            right: 30px;
-            top: 30px;
-            transition: all 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
-            opacity: 0;
-            transform: translateY(-20px);
-        }
-        #toast.show {
-            visibility: visible;
-            opacity: 1;
-            transform: translateY(0);
-        }
-
-        /* Modal Animation */
-        .modal-backdrop { transition: opacity 0.3s ease; }
-        .modal-content { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
-
-        /* Print Specific Styles */
+        #toast { visibility: hidden; min-width: 280px; border-radius: 16px; padding: 16px; position: fixed; z-index: 100; right: 30px; top: 30px; transition: all 0.5s ease; opacity: 0; transform: translateY(-20px); }
+        #toast.show { visibility: visible; opacity: 1; transform: translateY(0); }
         @media print { 
             @page { size: landscape; margin: 0.5cm; }
             .no-print { display: none !important; }
-            body { background-color: white; padding: 0; margin: 0; }
-            .print-container { max-width: 100% !important; width: 100% !important; margin: 0 !important; padding: 0 !important; }
-            .bg-white { border: none !important; box-shadow: none !important; }
-            
-            table { 
-                width: 100% !important; 
-                border: 1px solid #000 !important; 
-                border-collapse: collapse !important;
-                table-layout: fixed; /* บังคับสัดส่วนคอลัมน์ */
-            }
-            
-            th, td { 
-                border: 1px solid #333 !important; 
-                padding: 6px 4px !important; 
-                color: black !important; 
-                font-size: 11pt !important;
-                word-wrap: break-word; 
-                overflow-wrap: break-word;
-            }
-
-            /* กำหนดความกว้างคอลัมน์ในหน้าพิมพ์ */
-            th:nth-child(1), td:nth-child(1) { width: 12%; } /* วันที่รับ */
-            th:nth-child(2), td:nth-child(2) { width: 10%; } /* เลขทะเบียน */
-            th:nth-child(3), td:nth-child(3) { width: 12%; } /* ที่ */
-            th:nth-child(4), td:nth-child(4) { width: 10%; } /* ลงวันที่ */
-            th:nth-child(5), td:nth-child(5) { width: 12%; } /* จาก */
-            th:nth-child(6), td:nth-child(6) { width: 10%; } /* ถึง */
-            th:nth-child(7), td:nth-child(7) { width: 34%; } /* เรื่อง (ขยายกว้างสุด) */
-            
-            thead { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; }
-            tr { page-break-inside: avoid; }
+            body { background-color: white; padding: 0; }
+            table { width: 100% !important; border: 1px solid #000 !important; border-collapse: collapse !important; table-layout: fixed; }
+            th, td { border: 1px solid #333 !important; padding: 6px 4px !important; color: black !important; font-size: 11pt !important; word-wrap: break-word; }
+            th:nth-child(7), td:nth-child(7) { width: 35%; }
         }
     </style>
 </head>
 <body class="p-4 md:p-10 text-slate-900">
 
-    <!-- Toast Notification -->
     <div id="toast" class="flex items-center gap-3 text-white shadow-2xl">
-        <div id="toastIcon"></div>
-        <span id="toastMessage" class="font-bold text-lg">ดำเนินการสำเร็จ</span>
+        <span id="toastMessage" class="font-bold"></span>
     </div>
 
     <!-- Summary Modal -->
     <div id="summaryModal" class="fixed inset-0 z-[150] hidden">
-        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm modal-backdrop"></div>
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"></div>
         <div class="absolute inset-0 flex items-center justify-center p-4">
-            <div class="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden modal-content transform scale-95 opacity-0">
-                <div class="bg-indigo-600 p-8 text-white relative">
-                    <div class="absolute top-0 right-0 p-6 opacity-20">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-24 w-24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                    </div>
-                    <h3 class="text-2xl font-extrabold mb-1">บันทึกสำเร็จแล้ว</h3>
-                    <p class="text-indigo-100 font-medium">สรุปข้อมูลการลงทะเบียน</p>
+            <div class="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden transform transition-all">
+                <div class="bg-indigo-600 p-8 text-white">
+                    <h3 class="text-2xl font-extrabold">บันทึกเรียบร้อย</h3>
+                    <p class="text-indigo-100 italic">ข้อมูลถูกส่งไปยัง Cloud (Firebase) และ Google Sheets แล้ว</p>
                 </div>
-                <div class="p-8 space-y-4" id="summaryContent">
-                    <!-- Dynamic Content -->
-                </div>
-                <div class="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
-                    <button onclick="closeSummary()" class="px-8 py-3 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 transition-all active:scale-95 shadow-lg">
-                        รับทราบ
-                    </button>
+                <div class="p-8 space-y-4" id="summaryContent"></div>
+                <div class="p-6 bg-slate-50 flex justify-end">
+                    <button onclick="document.getElementById('summaryModal').classList.add('hidden')" class="px-8 py-3 bg-slate-900 text-white font-bold rounded-2xl">ตกลง</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="max-w-7xl mx-auto print-container">
-        <!-- Header -->
+    <div class="max-w-7xl mx-auto">
         <div class="flex flex-col md:flex-row justify-between items-end mb-10 gap-6">
             <div>
-                <div class="flex items-center gap-3 mb-2">
-                    <div class="p-3 bg-indigo-600 rounded-2xl shadow-lg no-print">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
-                        </svg>
-                    </div>
-                    <h1 class="text-3xl font-extrabold text-slate-900">ทะเบียนคุมหนังสือรับออนไลน์</h1>
-                </div>
-                <p class="text-slate-500 font-medium ml-1">โรงเรียนบ้านดุซงยอ</p>
+                <h1 class="text-3xl font-extrabold text-slate-900">ทะเบียนหนังสือรับออนไลน์</h1>
+                <p class="text-slate-500 font-medium">Hybrid Storage: Firebase (dys001) + Google Sheets</p>
             </div>
-            
             <div class="flex gap-3 no-print">
-                <button onclick="fetchData()" class="flex items-center gap-2 px-5 py-2.5 bg-white text-slate-700 font-semibold rounded-xl border border-slate-200 hover:bg-slate-50 transition-all active:scale-95 shadow-sm">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    รีเฟรชข้อมูล
-                </button>
-                <button onclick="handlePrint()" class="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 shadow-lg transition-all active:scale-95">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                    </svg>
-                    พิมพ์รายงาน
-                </button>
+                <button onclick="window.print()" class="px-5 py-2.5 bg-slate-900 text-white font-semibold rounded-xl shadow-lg hover:bg-slate-800 transition-all">พิมพ์รายงาน</button>
             </div>
         </div>
 
-        <!-- Input Form Card -->
-        <div id="formSection" class="modern-card p-8 rounded-3xl mb-10 no-print border-t-4 border-t-indigo-500 transition-all duration-500">
-            <div class="flex items-center justify-between mb-6">
-                <div class="flex items-center gap-2">
-                    <div id="formStatusIndicator" class="w-1.5 h-6 bg-indigo-500 rounded-full"></div>
-                    <h2 id="formTitle" class="text-xl font-bold text-slate-800">ลงทะเบียนหนังสือเข้าใหม่</h2>
-                </div>
-                <button id="cancelEditBtn" onclick="cancelEdit()" class="hidden flex items-center gap-1 text-sm text-red-500 hover:text-red-700 font-bold transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    ยกเลิกการแก้ไข
-                </button>
-            </div>
-            
+        <!-- Form -->
+        <div id="formSection" class="modern-card p-8 rounded-3xl mb-10 no-print border-t-4 border-t-indigo-500">
+            <h2 id="formTitle" class="text-xl font-bold mb-6 text-slate-800">ลงทะเบียนหนังสือใหม่</h2>
             <form id="recordForm" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <input type="hidden" id="rowIndex" name="rowIndex">
-                
-                <div class="space-y-1.5">
-                    <label class="text-sm font-bold text-slate-700 ml-1">วัน/เดือน/ปี ที่รับ</label>
-                    <input type="date" id="date_received" name="date_received" required class="w-full p-3 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-100 outline-none transition-all">
-                </div>
-                <div class="space-y-1.5">
-                    <label class="text-sm font-bold text-slate-700 ml-1">เลขทะเบียนรับ</label>
-                    <input type="text" id="reg_no" name="reg_no" required placeholder="1/2569" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-semibold text-indigo-700">
-                </div>
-                <div class="space-y-1.5">
-                    <label class="text-sm font-bold text-slate-700 ml-1">เลขที่หนังสือ (ที่)</label>
-                    <input type="text" id="doc_no" name="doc_no" required placeholder="ศธ 04xxx/..." class="w-full p-3 bg-white border border-slate-200 rounded-2xl outline-none transition-all">
-                </div>
-                <div class="space-y-1.5">
-                    <label class="text-sm font-bold text-slate-700 ml-1">ลงวันที่ (ในหนังสือ)</label>
-                    <input type="date" id="doc_date" name="doc_date" required class="w-full p-3 bg-white border border-slate-200 rounded-2xl outline-none transition-all">
-                </div>
-                <div class="space-y-1.5">
-                    <label class="text-sm font-bold text-slate-700 ml-1">จาก</label>
-                    <input type="text" id="from_dept" name="from_dept" required placeholder="ชื่อหน่วยงานต้นทาง" class="w-full p-3 bg-white border border-slate-200 rounded-2xl outline-none transition-all">
-                </div>
-                <div class="space-y-1.5">
-                    <label class="text-sm font-bold text-slate-700 ml-1">ถึง</label>
-                    <input type="text" id="to_dept" name="to_dept" required placeholder="ผู้อำนวยการ" class="w-full p-3 bg-white border border-slate-200 rounded-2xl outline-none transition-all">
-                </div>
-                <div class="md:col-span-2 space-y-1.5">
-                    <label class="text-sm font-bold text-slate-700 ml-1">เรื่อง</label>
-                    <input type="text" id="subject" name="subject" required placeholder="ระบุชื่อเรื่องของหนังสือ" class="w-full p-3 bg-white border border-slate-200 rounded-2xl outline-none transition-all">
-                </div>
-                <div class="lg:col-span-4 flex justify-end mt-2">
-                    <button type="submit" id="submitBtn" class="w-full md:w-48 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-2xl shadow-lg transition-all active:scale-95 disabled:bg-slate-300">
-                        <span id="btnText">บันทึกข้อมูล</span>
-                    </button>
+                <input type="hidden" id="docId" name="docId">
+                <div class="space-y-1.5"><label class="text-sm font-bold">วันที่รับ</label><input type="date" id="date_received" name="date_received" required class="w-full p-3 border rounded-2xl"></div>
+                <div class="space-y-1.5"><label class="text-sm font-bold">เลขทะเบียนรับ</label><input type="text" id="reg_no" name="reg_no" required class="w-full p-3 border rounded-2xl font-bold text-indigo-600"></div>
+                <div class="space-y-1.5"><label class="text-sm font-bold">ที่ (เลขหนังสือ)</label><input type="text" id="doc_no" name="doc_no" required class="w-full p-3 border rounded-2xl"></div>
+                <div class="space-y-1.5"><label class="text-sm font-bold">ลงวันที่</label><input type="date" id="doc_date" name="doc_date" required class="w-full p-3 border rounded-2xl"></div>
+                <div class="space-y-1.5"><label class="text-sm font-bold">จาก</label><input type="text" id="from_dept" name="from_dept" required class="w-full p-3 border rounded-2xl"></div>
+                <div class="space-y-1.5"><label class="text-sm font-bold">ถึง</label><input type="text" id="to_dept" name="to_dept" required class="w-full p-3 border rounded-2xl"></div>
+                <div class="md:col-span-2 space-y-1.5"><label class="text-sm font-bold">เรื่อง</label><input type="text" id="subject" name="subject" required class="w-full p-3 border rounded-2xl"></div>
+                <div class="lg:col-span-4 flex justify-end">
+                    <button type="submit" id="submitBtn" class="bg-indigo-600 text-white px-10 py-3.5 rounded-2xl font-bold shadow-lg hover:bg-indigo-700 active:scale-95 transition-all">บันทึกข้อมูล</button>
+                    <button type="button" id="cancelBtn" onclick="resetForm()" class="hidden ml-3 bg-slate-200 px-6 py-3.5 rounded-2xl font-bold">ยกเลิก</button>
                 </div>
             </form>
         </div>
 
-        <!-- Search Bar -->
-        <div class="flex flex-col md:flex-row gap-4 mb-6 no-print">
-            <div class="relative flex-grow">
-                <span class="absolute inset-y-0 left-0 flex items-center pl-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                </span>
-                <input type="text" id="searchTerm" onkeyup="renderTable()" placeholder="ค้นหาด้วย เลขที่, เรื่อง, หรือหน่วยงาน..." class="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl outline-none shadow-sm focus:ring-4 focus:ring-indigo-100">
-            </div>
-            <div class="flex items-center px-6 py-4 bg-indigo-50 rounded-2xl border border-indigo-100 text-indigo-700 font-semibold">
-                <span id="recordCount" class="mr-2">0</span> รายการทั้งหมด
-            </div>
-        </div>
-
-        <!-- Table Card -->
+        <!-- Table -->
         <div class="bg-white rounded-[2rem] shadow-xl border border-slate-200 overflow-hidden">
-            <div class="table-container overflow-x-auto">
-                <table class="w-full text-left border-collapse min-w-[1100px]">
-                    <thead class="bg-slate-50 text-slate-500 text-[13px] font-bold uppercase tracking-wider">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse min-w-[1000px]">
+                    <thead class="bg-slate-50 text-slate-500 text-xs font-bold uppercase">
                         <tr>
-                            <th class="p-5 border-b border-slate-100 text-center">วันที่รับ</th>
-                            <th class="p-5 border-b border-slate-100 text-center">เลขทะเบียนรับ</th>
-                            <th class="p-5 border-b border-slate-100 text-center">ที่</th>
-                            <th class="p-5 border-b border-slate-100 text-center">ลงวันที่</th>
-                            <th class="p-5 border-b border-slate-100">จาก</th>
-                            <th class="p-5 border-b border-slate-100">ถึง</th>
-                            <th class="p-5 border-b border-slate-100">เรื่อง</th>
-                            <th class="p-5 border-b border-slate-100 text-center no-print">จัดการ</th>
+                            <th class="p-5 text-center">วันที่รับ</th>
+                            <th class="p-5 text-center">ทะเบียนรับ</th>
+                            <th class="p-5 text-center">ที่</th>
+                            <th class="p-5 text-center">ลงวันที่</th>
+                            <th class="p-5">จาก</th>
+                            <th class="p-5">ถึง</th>
+                            <th class="p-5">เรื่อง</th>
+                            <th class="p-5 text-center no-print">จัดการ</th>
                         </tr>
                     </thead>
-                    <tbody id="tableBody" class="text-[14px] text-slate-600 divide-y divide-slate-50">
-                        <tr><td colspan="8" class="p-20 text-center">
-                            <div class="loading-spinner border-indigo-500 mb-4"></div>
-                            <p class="text-slate-400 italic">กำลังเชื่อมต่อข้อมูล...</p>
-                        </td></tr>
+                    <tbody id="tableBody" class="text-sm divide-y">
+                        <tr><td colspan="8" class="p-10 text-center text-slate-400">กำลังโหลดข้อมูล...</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    <script>
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz_iEJJKdptDUKMWKRXXa-pqUT6MQnyzMIr_YSSxLohS3I5eo26WBrsoAE33yNCvy4_bA/exec"; 
-        let records = [];
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, updateDoc, doc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // 🔥 FIREBASE CONFIGURATION (DYS001)
+        const firebaseConfig = {
+            apiKey: "AIzaSyDEuaxS9dIgAb5gsa7vAPHHRQn0UTatfZI",
+            authDomain: "dys001.firebaseapp.com",
+            projectId: "dys001",
+            storageBucket: "dys001.firebasestorage.app",
+            messagingSenderId: "1013251588946",
+            appId: "1:1013251588946:web:6529a0ead96c5ec70cf08b",
+            measurementId: "G-MR9J0662YD"
+        };
+
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz_iEJJKdptDUKMWKRXXa-pqUT6MQnyzMIr_YSSxLohS3I5eo26WBrsoAE33yNCvy4_bA/exec";
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'dys-registry-system';
+
+        // Init Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        let currentUser = null;
         let isEditing = false;
-        let isPrintingMode = false;
+        
+        // Path: /artifacts/{appId}/public/data/registrations
+        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
 
-        async function fetchData() {
+        // Auth Flow
+        const initAuth = async () => {
             try {
-                const response = await fetch(SCRIPT_URL);
-                const data = await response.json();
-                
-                records = (Array.isArray(data) ? data : []).map((row, index) => {
-                    const vals = Object.values(row);
-                    return {
-                        rowIndex: index + 2,
-                        date_received: parseAndFormatDate(vals[0]),
-                        reg_no: vals[1] || '-',
-                        doc_no: vals[2] || '-',
-                        doc_date: parseAndFormatDate(vals[3]),
-                        from_dept: vals[4] || '-',
-                        to_dept: vals[5] || '-',
-                        subject: vals[6] || '-'
-                    };
-                }); 
-                
-                if (!isEditing) setNextRegNo();
-                renderTable();
-            } catch (error) {
-                console.error('Error:', error);
-                document.getElementById('tableBody').innerHTML = '<tr><td colspan="8" class="p-10 text-center text-red-500 font-bold">⚠️ ไม่สามารถเชื่อมต่อฐานข้อมูลได้</td></tr>';
+                await signInAnonymously(auth);
+            } catch (err) {
+                console.error("Auth error:", err);
             }
-        }
+        };
+        initAuth();
 
-        function parseAndFormatDate(rawDate) {
-            if (!rawDate) return "-";
-            const dateObj = new Date(rawDate);
-            if (!isNaN(dateObj.getTime())) {
-                return formatThaiDateFull(dateObj);
-            }
-            return rawDate;
-        }
-
-        const form = document.getElementById('recordForm');
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const submitBtn = document.getElementById('submitBtn');
-            const btnText = document.getElementById('btnText');
-            
-            submitBtn.disabled = true;
-            btnText.innerHTML = '<span class="loading-spinner"></span> กำลังบันทึก...';
-
-            const formData = new FormData(form);
-            const rawData = Object.fromEntries(formData.entries());
-
-            const formattedReceived = formatThaiDateFull(new Date(rawData.date_received));
-            const formattedDocDate = formatThaiDateFull(new Date(rawData.doc_date));
-
-            const dataToSave = {
-                action: isEditing ? 'update' : 'insert',
-                rowIndex: rawData.rowIndex,
-                date_received: formattedReceived,
-                reg_no: rawData.reg_no,
-                doc_no: rawData.doc_no,
-                doc_date: formattedDocDate,
-                from_dept: rawData.from_dept,
-                to_dept: rawData.to_dept,
-                subject: rawData.subject
-            };
-
-            try {
-                await fetch(SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    body: JSON.stringify(dataToSave),
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                
-                setTimeout(async () => {
-                    showToast(isEditing ? "แก้ไขข้อมูลสำเร็จแล้ว" : "บันทึกข้อมูลสำเร็จแล้ว", "emerald");
-                    openSummary(dataToSave); 
-                    cancelEdit();
-                    await fetchData(); 
-                }, 1000);
-
-            } catch (error) {
-                showToast("เกิดข้อผิดพลาดในการบันทึก", "red");
-                console.error(error);
-            } finally {
-                submitBtn.disabled = false;
-                btnText.innerText = 'บันทึกข้อมูล';
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                loadData();
             }
         });
 
-        function openSummary(data) {
-            const modal = document.getElementById('summaryModal');
-            const content = document.getElementById('summaryContent');
-            const modalBox = modal.querySelector('.modal-content');
-
-            content.innerHTML = `
-                <div class="grid grid-cols-3 gap-4 border-b border-slate-50 pb-4">
-                    <div class="text-slate-400 text-sm font-bold">เลขทะเบียนรับ</div>
-                    <div class="col-span-2 text-indigo-700 font-extrabold text-lg">${data.reg_no}</div>
-                </div>
-                <div class="grid grid-cols-3 gap-4 border-b border-slate-50 pb-4">
-                    <div class="text-slate-400 text-sm font-bold">วันที่รับ</div>
-                    <div class="col-span-2 text-slate-700 font-semibold">${data.date_received}</div>
-                </div>
-                <div class="grid grid-cols-3 gap-4 border-b border-slate-50 pb-4">
-                    <div class="text-slate-400 text-sm font-bold">เลขที่หนังสือ</div>
-                    <div class="col-span-2 text-slate-700 font-semibold">${data.doc_no}</div>
-                </div>
-                <div class="grid grid-cols-3 gap-4 border-b border-slate-50 pb-4">
-                    <div class="text-slate-400 text-sm font-bold">จาก</div>
-                    <div class="col-span-2 text-slate-700 font-semibold">${data.from_dept}</div>
-                </div>
-                <div class="grid grid-cols-3 gap-4">
-                    <div class="text-slate-400 text-sm font-bold">เรื่อง</div>
-                    <div class="col-span-2 text-slate-900 font-bold leading-relaxed">${data.subject}</div>
-                </div>
-            `;
-
-            modal.classList.remove('hidden');
-            setTimeout(() => {
-                modalBox.classList.remove('scale-95', 'opacity-0');
-                modalBox.classList.add('scale-100', 'opacity-100');
-            }, 50);
-        }
-
-        function closeSummary() {
-            const modal = document.getElementById('summaryModal');
-            const modalBox = modal.querySelector('.modal-content');
-            modalBox.classList.replace('scale-100', 'scale-95');
-            modalBox.classList.replace('opacity-100', 'opacity-0');
-            setTimeout(() => {
-                modal.classList.add('hidden');
-            }, 200);
-        }
-
-        function editRecord(rowIndex) {
-            const item = records.find(r => r.rowIndex === rowIndex);
-            if (!item) return;
-
-            isEditing = true;
-            const formSection = document.getElementById('formSection');
-            formSection.classList.replace('border-t-indigo-500', 'border-t-orange-400');
-            document.getElementById('formStatusIndicator').classList.replace('bg-indigo-500', 'bg-orange-400');
-            document.getElementById('formTitle').innerText = "แก้ไขข้อมูลรายการที่ " + item.reg_no;
-            document.getElementById('btnText').innerText = "บันทึกการแก้ไข";
-            document.getElementById('cancelEditBtn').classList.remove('hidden');
-
-            document.getElementById('rowIndex').value = item.rowIndex;
-            document.getElementById('reg_no').value = item.reg_no;
-            document.getElementById('doc_no').value = item.doc_no;
-            document.getElementById('from_dept').value = item.from_dept;
-            document.getElementById('to_dept').value = item.to_dept;
-            document.getElementById('subject').value = item.subject;
-            
-            document.getElementById('date_received').value = convertThaiDateToISO(item.date_received);
-            document.getElementById('doc_date').value = convertThaiDateToISO(item.doc_date);
-
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        function cancelEdit() {
-            isEditing = false;
-            form.reset();
-            const formSection = document.getElementById('formSection');
-            formSection.classList.replace('border-t-orange-400', 'border-t-indigo-500');
-            document.getElementById('formStatusIndicator').classList.replace('bg-orange-400', 'bg-indigo-500');
-            document.getElementById('formTitle').innerText = "ลงทะเบียนหนังสือเข้าใหม่";
-            document.getElementById('btnText').innerText = "บันทึกข้อมูล";
-            document.getElementById('cancelEditBtn').classList.add('hidden');
-            setDefaults();
-        }
-
-        function showToast(message, colorClass) {
-            const toast = document.getElementById("toast");
-            const toastMsg = document.getElementById("toastMessage");
-            toast.className = `flex items-center gap-3 text-white shadow-2xl bg-${colorClass}-500 show`;
-            toastMsg.innerText = message;
-            setTimeout(() => { toast.classList.remove("show"); }, 3000);
-        }
-
-        function handlePrint() {
-            isPrintingMode = true;
-            renderTable();
-            setTimeout(() => {
-                window.print();
-                isPrintingMode = false;
-                renderTable();
-            }, 500);
-        }
-
-        function renderTable() {
-            const tableBody = document.getElementById('tableBody');
-            const searchTerm = document.getElementById('searchTerm').value.toLowerCase();
-            
-            let filtered = records.filter(r => 
-                Object.values(r).some(val => String(val).toLowerCase().includes(searchTerm))
-            );
-
-            if (isPrintingMode) {
-                filtered.sort((a, b) => {
-                    const numA = parseInt(String(a.reg_no).split('/')[0]) || 0;
-                    const numB = parseInt(String(b.reg_no).split('/')[0]) || 0;
-                    return numA - numB;
+        // Load Real-time Data
+        function loadData() {
+            if (!currentUser) return;
+            onSnapshot(colRef, (snapshot) => {
+                const data = [];
+                snapshot.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+                
+                // Sort Newest first in memory
+                data.sort((a, b) => {
+                    const numA = parseInt(a.reg_no) || 0;
+                    const numB = parseInt(b.reg_no) || 0;
+                    return numB - numA;
                 });
-            } else {
-                filtered.reverse();
+                
+                renderTable(data);
+                if(!isEditing) generateNextRegNo(data);
+            }, (error) => {
+                console.error("Firestore permission or connection error:", error);
+                showToast("ไม่สามารถโหลดข้อมูลได้ โปรดตรวจสอบสิทธิ์ Firestore", "bg-red-600");
+            });
+        }
+
+        // Render Table UI
+        function renderTable(data) {
+            const tbody = document.getElementById('tableBody');
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="p-10 text-center text-slate-400">ยังไม่มีข้อมูลในระบบ</td></tr>';
+                return;
             }
-
-            document.getElementById('recordCount').innerText = filtered.length;
-
-            tableBody.innerHTML = filtered.map(r => `
-                <tr class="hover:bg-indigo-50/40 transition-colors group">
-                    <td class="p-5 text-center font-semibold text-slate-800">${r.date_received}</td>
-                    <td class="p-5 text-center">
-                        <span class="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full font-bold text-xs">${r.reg_no}</span>
-                    </td>
-                    <td class="p-5 text-center text-slate-500 font-medium">${r.doc_no}</td>
-                    <td class="p-5 text-center text-slate-500 font-medium">${r.doc_date}</td>
-                    <td class="p-5 font-medium text-slate-700">${r.from_dept}</td>
-                    <td class="p-5 font-medium text-slate-700">${r.to_dept}</td>
-                    <td class="p-5 font-bold text-slate-900 leading-relaxed">${r.subject}</td>
+            tbody.innerHTML = data.map(item => `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="p-5 text-center font-medium">${item.date_received_thai || '-'}</td>
+                    <td class="p-5 text-center"><span class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full font-bold">${item.reg_no}</span></td>
+                    <td class="p-5 text-center text-slate-500">${item.doc_no}</td>
+                    <td class="p-5 text-center text-slate-500">${item.doc_date_thai || '-'}</td>
+                    <td class="p-5">${item.from_dept}</td>
+                    <td class="p-5">${item.to_dept}</td>
+                    <td class="p-5 font-bold text-slate-800">${item.subject}</td>
                     <td class="p-5 text-center no-print">
-                        <div class="flex justify-center">
-                            <button onclick="editRecord(${r.rowIndex})" class="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition-all active:scale-90">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                            </button>
-                        </div>
+                        <button onclick="window.editItem('${item.id}')" class="text-orange-500 font-bold hover:underline px-2">แก้ไข</button>
                     </td>
                 </tr>
             `).join('');
-
-            if (filtered.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="8" class="p-20 text-center text-slate-400 italic">ไม่พบข้อมูลที่ต้องการ</td></tr>';
-            }
         }
 
-        function setNextRegNo() {
-            let maxNum = 0; 
-            const currentYear = "2569";
-            
-            records.forEach(r => {
-                if (r.reg_no && typeof r.reg_no === 'string' && r.reg_no.includes('/' + currentYear)) {
-                    const parts = r.reg_no.split('/');
-                    const num = parseInt(parts[0]);
-                    if (!isNaN(num) && num > maxNum) maxNum = num;
+        // Auto-generate Next Registration Number
+        function generateNextRegNo(data) {
+            const currentYear = (new Date().getFullYear() + 543).toString();
+            let maxNum = 0;
+            data.forEach(item => {
+                if(item.reg_no && item.reg_no.includes('/' + currentYear)) {
+                    const num = parseInt(item.reg_no.split('/')[0]);
+                    if(num > maxNum) maxNum = num;
                 }
             });
-            
             document.getElementById('reg_no').value = (maxNum + 1) + "/" + currentYear;
         }
 
-        function formatThaiDateFull(date) {
-            if (!(date instanceof Date) || isNaN(date.getTime())) return "-";
-            const monthsFull = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-            const day = date.getDate();
-            const month = monthsFull[date.getMonth()];
-            let year = date.getFullYear();
-            if (year < 2400) year += 543;
-            return `${day} ${month} ${year}`;
-        }
+        // Form Submit Handler
+        document.getElementById('recordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if(!currentUser) {
+                showToast("ยังไม่ได้เข้าสู่ระบบ", "bg-red-500");
+                return;
+            }
 
-        function convertThaiDateToISO(thaiStr) {
-            if (!thaiStr || thaiStr === '-') return "";
-            const monthsFull = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-            const parts = thaiStr.split(' ');
-            if (parts.length < 3) return "";
-            const day = parts[0].padStart(2, '0');
-            const monthIndex = monthsFull.indexOf(parts[1]);
-            const month = (monthIndex + 1).toString().padStart(2, '0');
-            let year = parseInt(parts[2]) - 543;
-            return `${year}-${month}-${day}`;
-        }
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span> กำลังบันทึก...';
 
-        function setDefaults() {
+            const formData = new FormData(e.target);
+            const raw = Object.fromEntries(formData.entries());
+            
+            const thaiReceived = formatThaiDate(new Date(raw.date_received));
+            const thaiDocDate = formatThaiDate(new Date(raw.doc_date));
+
+            const payload = {
+                ...raw,
+                date_received_thai: thaiReceived,
+                doc_date_thai: thaiDocDate,
+                updatedAt: serverTimestamp()
+            };
+
+            try {
+                // 1. Save to Firebase Firestore
+                if (isEditing) {
+                    await updateDoc(doc(db, colRef.path, raw.docId), payload);
+                } else {
+                    payload.createdAt = serverTimestamp();
+                    await addDoc(colRef, payload);
+                }
+
+                // 2. Save to Google Sheets (Backup)
+                fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: JSON.stringify({
+                        action: isEditing ? 'update_by_reg' : 'insert',
+                        ...payload
+                    })
+                });
+
+                showToast(isEditing ? "แก้ไขข้อมูลสำเร็จ" : "บันทึกข้อมูลสำเร็จ", "bg-emerald-500");
+                showSummary(payload);
+                resetForm();
+            } catch (err) {
+                console.error("Save error:", err);
+                showToast("เกิดข้อผิดพลาดในการบันทึก", "bg-red-500");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "บันทึกข้อมูล";
+            }
+        });
+
+        // Interface functions
+        window.editItem = (id) => {
+            isEditing = true;
+            const docRef = doc(db, colRef.path, id);
+            
+            // Get single data for editing
+            onSnapshot(docRef, (d) => {
+                if (!d.exists()) return;
+                const data = d.data();
+                document.getElementById('docId').value = id;
+                document.getElementById('reg_no').value = data.reg_no;
+                document.getElementById('doc_no').value = data.doc_no;
+                document.getElementById('from_dept').value = data.from_dept;
+                document.getElementById('to_dept').value = data.to_dept;
+                document.getElementById('subject').value = data.subject;
+                document.getElementById('date_received').value = data.date_received;
+                document.getElementById('doc_date').value = data.doc_date;
+                
+                document.getElementById('formTitle').innerText = "📝 กำลังแก้ไขรายการ: " + data.reg_no;
+                document.getElementById('cancelBtn').classList.remove('hidden');
+                document.getElementById('formSection').classList.replace('border-t-indigo-500', 'border-t-orange-500');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        };
+
+        window.resetForm = () => {
+            isEditing = false;
+            document.getElementById('recordForm').reset();
+            document.getElementById('formTitle').innerText = "ลงทะเบียนหนังสือใหม่";
+            document.getElementById('cancelBtn').classList.add('hidden');
+            document.getElementById('formSection').classList.replace('border-t-orange-500', 'border-t-indigo-500');
+            
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('date_received').value = today;
             document.getElementById('doc_date').value = today;
             document.getElementById('to_dept').value = "ผู้อำนวยการ";
-            if (!isEditing) setNextRegNo();
+        };
+
+        function formatThaiDate(date) {
+            const months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+            return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear() + 543}`;
         }
 
-        window.onload = () => {
-            setDefaults();
-            fetchData();
-        };
+        function showToast(msg, colorClass) {
+            const t = document.getElementById('toast');
+            t.className = `flex items-center gap-3 text-white shadow-2xl p-4 rounded-xl show ${colorClass}`;
+            document.getElementById('toastMessage').innerText = msg;
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        function showSummary(data) {
+            const modal = document.getElementById('summaryModal');
+            document.getElementById('summaryContent').innerHTML = `
+                <div class="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <p class="flex justify-between"><b>เลขทะเบียน:</b> <span class="text-indigo-600">${data.reg_no}</span></p>
+                    <p class="flex justify-between"><b>เลขที่หนังสือ:</b> <span>${data.doc_no}</span></p>
+                    <div class="border-t pt-2">
+                        <p class="text-xs text-slate-400 font-bold uppercase mb-1">เรื่อง</p>
+                        <p class="text-slate-800 font-medium">${data.subject}</p>
+                    </div>
+                </div>
+            `;
+            modal.classList.remove('hidden');
+        }
+
+        // Initialize Defaults
+        window.resetForm();
+
     </script>
 </body>
 </html>
