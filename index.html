@@ -3,488 +3,492 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบทะเบียนคุมหนังสือรับออนไลน์ (Sync with Google Sheets)</title>
+    <title>ระบบลงทะเบียนหนังสือรับ</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Firebase SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js" type="module"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js" type="module"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js" type="module"></script>
-
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Sarabun', 'Inter', sans-serif; background-color: #f1f5f9; }
-        .modern-card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); }
-        #toast { visibility: hidden; min-width: 280px; border-radius: 16px; padding: 16px; position: fixed; z-index: 100; right: 30px; top: 30px; transition: all 0.5s ease; opacity: 0; transform: translateY(-20px); }
-        #toast.show { visibility: visible; opacity: 1; transform: translateY(0); }
+        body { font-family: 'Sarabun', sans-serif; }
         
-        @media print { 
-            @page { size: landscape; margin: 1cm; }
+        @media print {
+            @page { size: landscape; margin: 10mm; }
             .no-print { display: none !important; }
-            body { background-color: white; padding: 0; }
-            .max-w-7xl { max-width: 100% !important; width: 100% !important; margin: 0 !important; }
-            table { width: 100% !important; border: 1px solid #000 !important; border-collapse: collapse !important; table-layout: fixed; }
-            th, td { border: 1px solid #333 !important; padding: 8px 4px !important; color: black !important; font-size: 10pt !important; word-wrap: break-word; }
-            thead { display: table-header-group; }
-            tr { page-break-inside: avoid; }
+            .print-only { display: table-cell !important; }
+            body { background: white !important; }
+            #app { padding: 0 !important; margin: 0 !important; max-width: 100% !important; }
+            table { width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
+            th, td { border: 1px solid #333 !important; padding: 4px !important; font-size: 10px !important; word-wrap: break-word !important; color: black !important; }
+            th { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; }
+            .bg-white { border: none !important; box-shadow: none !important; }
+            .shadow-sm { box-shadow: none !important; }
         }
+
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(255,255,255,0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .urgency-badge {
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 700;
+            text-align: center;
+            display: inline-block;
+            min-width: 60px;
+        }
+        .urgency-normal { background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .urgency-urgent { background-color: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
-<body class="p-4 md:p-10 text-slate-900">
+<body class="bg-slate-50 text-slate-900">
 
-    <div id="toast" class="flex items-center gap-3 text-white shadow-2xl">
-        <span id="toastMessage" class="font-bold"></span>
+    <!-- Loading Screen -->
+    <div id="loading" class="loading-overlay">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+        <p class="text-slate-600 font-medium animate-pulse">กำลังเชื่อมต่อระบบฐานข้อมูล...</p>
     </div>
 
-    <!-- Summary Modal -->
-    <div id="summaryModal" class="fixed inset-0 z-[150] hidden">
-        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"></div>
-        <div class="absolute inset-0 flex items-center justify-center p-4">
-            <div class="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden transform transition-all scale-100">
-                <div class="bg-indigo-600 p-6 text-white text-center">
-                    <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                        </svg>
-                    </div>
-                    <h3 class="text-xl font-extrabold">บันทึกข้อมูลสำเร็จ</h3>
-                    <p class="text-indigo-100 text-sm">ข้อมูลถูกบันทึกลง Firebase และ Google Sheets เรียบร้อยแล้ว</p>
-                </div>
-                <div class="p-6 space-y-3 max-h-[60vh] overflow-y-auto" id="summaryContent">
-                    <!-- ข้อมูลจะถูกเติมที่นี่ด้วย JS -->
-                </div>
-                <div class="p-5 bg-slate-50 flex justify-center">
-                    <button onclick="document.getElementById('summaryModal').classList.add('hidden')" class="w-full py-3 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 transition-colors">รับทราบ</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="deleteModal" class="fixed inset-0 z-[200] hidden">
-        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"></div>
-        <div class="absolute inset-0 flex items-center justify-center p-4">
-            <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden p-8 text-center">
-                <div class="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                </div>
-                <h3 class="text-xl font-bold text-slate-900 mb-2">ยืนยันการลบข้อมูล?</h3>
-                <p class="text-slate-500 mb-6">ข้อมูลจะถูกลบออกจาก Firebase (หมายเหตุ: ใน Google Sheets จะต้องลบเองด้วยมือ)</p>
-                <div class="flex gap-3">
-                    <button onclick="document.getElementById('deleteModal').classList.add('hidden')" class="flex-1 px-4 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl">ยกเลิก</button>
-                    <button id="confirmDeleteBtn" class="flex-1 px-4 py-3 bg-red-600 text-white font-bold rounded-2xl">ลบข้อมูล</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="max-w-7xl mx-auto">
-        <div class="flex flex-col md:flex-row justify-between items-end mb-10 gap-6">
+    <div id="app" class="max-w-[1600px] mx-auto p-4 md:p-8">
+        <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
             <div>
-                <div class="flex items-center gap-2 mb-1">
-                    <span class="bg-indigo-600 w-3 h-3 rounded-full animate-pulse"></span>
-                    <span class="text-xs font-bold text-indigo-600 uppercase tracking-widest">Hybrid Database (Firebase + Sheets)</span>
-                </div>
-                <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">ทะเบียนหนังสือรับออนไลน์</h1>
-                <p class="text-slate-500 font-medium">โรงเรียนบ้านดุซงยอ</p>
+                <h1 class="text-3xl font-bold text-slate-800 flex items-center gap-2">
+                    <span class="text-blue-600 no-print">📁</span> 
+                    <span>ทะเบียนหนังสือรับ</span>
+                </h1>
+                <p class="text-slate-500 mt-1 no-print">ระบบสารบรรณอิเล็กทรอนิกส์ โรงเรียนบ้านดุซงยอ</p>
+                <p class="hidden print:block text-slate-500 text-sm">ข้อมูล ณ วันที่: <span id="printDate"></span></p>
             </div>
-            <div class="flex gap-3 no-print">
-                <button onclick="window.printToNewWindow()" class="px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-                    พิมพ์รายงานหน้าใหม่
+            <div class="flex gap-2 no-print">
+                <button onclick="handlePrint()" class="bg-slate-700 hover:bg-slate-800 text-white px-6 py-2.5 rounded-lg font-semibold flex items-center gap-2 transition-all shadow-md">
+                    🖨️ พิมพ์รายงาน
+                </button>
+                <button onclick="openModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-semibold flex items-center gap-2 transition-all shadow-lg shadow-blue-200">
+                    ➕ ลงทะเบียนใหม่
                 </button>
             </div>
-        </div>
-
-        <!-- Form -->
-        <div id="formSection" class="modern-card p-8 rounded-3xl mb-10 no-print border-t-4 border-t-indigo-500">
-            <h2 id="formTitle" class="text-xl font-bold mb-6 text-slate-800 flex items-center gap-2">ลงทะเบียนหนังสือใหม่</h2>
-            <form id="recordForm" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <input type="hidden" id="docId" name="docId">
-                <div class="space-y-1.5"><label class="text-sm font-bold text-slate-600">วันที่รับ</label><input type="date" id="date_received" name="date_received" required class="w-full p-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none border-slate-200 transition-all"></div>
-                <div class="space-y-1.5"><label class="text-sm font-bold text-slate-600">เลขทะเบียนรับ</label><input type="text" id="reg_no" name="reg_no" required class="w-full p-3 border rounded-2xl font-bold text-indigo-600 bg-indigo-50/30"></div>
-                <div class="space-y-1.5"><label class="text-sm font-bold text-slate-600">ที่ (เลขหนังสือ)</label><input type="text" id="doc_no" name="doc_no" required class="w-full p-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none border-slate-200 transition-all"></div>
-                <div class="space-y-1.5"><label class="text-sm font-bold text-slate-600">ลงวันที่</label><input type="date" id="doc_date" name="doc_date" required class="w-full p-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none border-slate-200 transition-all"></div>
-                <div class="space-y-1.5"><label class="text-sm font-bold text-slate-600">จาก</label><input type="text" id="from_dept" name="from_dept" required class="w-full p-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none border-slate-200 transition-all"></div>
-                <div class="space-y-1.5"><label class="text-sm font-bold text-slate-600">ถึง</label><input type="text" id="to_dept" name="to_dept" required class="w-full p-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none border-slate-200 transition-all"></div>
-                <div class="md:col-span-2 space-y-1.5"><label class="text-sm font-bold text-slate-600">เรื่อง</label><input type="text" id="subject" name="subject" required class="w-full p-3 border rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none border-slate-200 transition-all"></div>
-                <div class="lg:col-span-4 flex justify-end">
-                    <button type="submit" id="submitBtn" class="bg-indigo-600 text-white px-10 py-3.5 rounded-2xl font-bold shadow-lg hover:bg-indigo-700 active:scale-95 transition-all">บันทึกข้อมูล</button>
-                    <button type="button" id="cancelBtn" onclick="resetForm()" class="hidden ml-3 bg-slate-200 px-6 py-3.5 rounded-2xl font-bold text-slate-600">ยกเลิก</button>
-                </div>
-            </form>
-        </div>
+        </header>
 
         <!-- Search Bar -->
-        <div class="mb-6 flex flex-col md:flex-row gap-4 items-center justify-between no-print">
-            <div class="relative w-full md:w-96">
-                <input type="text" id="searchInput" placeholder="ค้นหาจากเลขที่หรือชื่อเรื่อง..." class="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm">
+        <div class="bg-white p-4 rounded-t-2xl border-x border-t border-slate-200 flex flex-col lg:flex-row gap-4 items-center shadow-sm no-print">
+            <div class="relative flex-1 w-full">
+                <span class="absolute left-3 top-2.5 text-slate-400">🔍</span>
+                <input 
+                    type="text" 
+                    id="searchInput"
+                    oninput="handleSearch()"
+                    placeholder="ค้นหาตามทะเบียนรับ, เลขที่หนังสือ, เรื่อง, จาก..." 
+                    class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                >
             </div>
-            <div class="text-sm font-bold text-indigo-600" id="paginationInfo">แสดงผล 0 รายการ</div>
+            <div class="text-slate-500 text-sm font-medium" id="countDisplay">กำลังโหลดรายการ...</div>
         </div>
 
-        <!-- Table -->
-        <div class="bg-white rounded-[2.5rem] shadow-xl border border-slate-200 overflow-hidden">
+        <!-- Data Table -->
+        <div class="bg-white border border-slate-200 shadow-sm overflow-hidden print:border-none">
             <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse min-w-[1000px]">
-                    <thead class="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
-                        <tr>
-                            <th class="p-5 text-center">วันที่รับ</th>
-                            <th class="p-5 text-center">ทะเบียนรับ</th>
-                            <th class="p-5 text-center">ที่</th>
-                            <th class="p-5 text-center">ลงวันที่</th>
-                            <th class="p-5">จาก</th>
-                            <th class="p-5">ถึง</th>
-                            <th class="p-5">เรื่อง</th>
-                            <th class="p-5 text-center no-print">จัดการ</th>
+                <table class="w-full text-left border-collapse min-w-[1400px] print:min-w-full">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-600 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
+                            <th class="px-2 py-4 w-[85px]">วันที่รับ</th>
+                            <th class="px-2 py-4 w-[80px]">ทะเบียนรับ</th>
+                            <th class="px-2 py-4 w-[80px] text-center">ความเร่งด่วน</th>
+                            <th class="px-2 py-4 w-[110px]">เลขที่หนังสือ</th>
+                            <th class="px-2 py-4 w-[85px]">ลงวันที่</th>
+                            <th class="px-2 py-4 w-[120px]">จาก</th>
+                            <th class="px-2 py-4 w-[120px]">ถึง</th>
+                            <th class="px-2 py-4">เรื่อง</th>
+                            <th class="px-2 py-4 w-[130px]">ผู้รับผิดชอบ</th>
+                            <th class="px-2 py-4 w-[110px]">หมายเหตุ</th>
+                            <th class="px-2 py-4 w-[70px] text-center no-print">จัดการ</th>
                         </tr>
                     </thead>
-                    <tbody id="tableBody" class="text-sm divide-y divide-slate-100">
-                        <tr><td colspan="8" class="p-10 text-center text-slate-400">กำลังโหลดข้อมูล...</td></tr>
-                    </tbody>
+                    <tbody id="documentTableBody" class="divide-y divide-slate-100 print:divide-y-0 text-[13px]"></tbody>
                 </table>
             </div>
         </div>
 
-        <div class="mt-8 mb-10 flex justify-center items-center gap-2 no-print" id="paginationControls"></div>
+        <!-- Pagination -->
+        <div class="bg-white border-x border-b border-slate-200 rounded-b-2xl px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm no-print">
+            <div class="text-sm text-slate-500" id="paginationInfo">กำลังคำนวณหน้า...</div>
+            <div class="flex items-center gap-2">
+                <button onclick="prevPage()" id="prevBtn" class="px-4 py-2 border border-slate-200 rounded-lg text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">ก่อนหน้า</button>
+                <div id="pageNumbers" class="flex gap-1"></div>
+                <button onclick="nextPage()" id="nextBtn" class="px-4 py-2 border border-slate-200 rounded-lg text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">ถัดไป</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Registration Modal -->
+    <div id="docModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 no-print">
+        <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-blue-600 text-white">
+                <h2 class="text-xl font-bold" id="modalTitle">ลงทะเบียนหนังสือรับใหม่</h2>
+                <button onclick="closeModal()" class="text-white hover:bg-white/20 p-1 rounded-full w-8 h-8 flex items-center justify-center transition-colors">✕</button>
+            </div>
+            <form id="docForm" onsubmit="handleSave(event)" class="p-6 max-h-[80vh] overflow-y-auto">
+                <input type="hidden" id="editId">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 uppercase mb-1 block">วันที่รับ</label>
+                        <input type="date" id="receiveDate" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-blue-600 uppercase mb-1 block">เลขที่รับ</label>
+                        <input type="text" id="receiveNo" class="w-full px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg font-bold text-blue-700 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น 1/2567" required>
+                        <p class="text-[10px] text-blue-400 mt-1">* ระบบช่วยดึงเลขล่าสุดให้อัตโนมัติ แต่คุณสามารถแก้ไขได้</p>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 uppercase mb-1 block">เลขที่หนังสือ</label>
+                        <input type="text" id="docNo" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น ศธ 04001/..." required>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 uppercase mb-1 block">ลงวันที่ในหนังสือ</label>
+                        <input type="date" id="docDate" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 uppercase mb-1 block">จาก (ผู้ส่ง)</label>
+                        <input type="text" id="from" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 uppercase mb-1 block">ถึง (ผู้รับ)</label>
+                        <input type="text" id="to" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-bold text-slate-500 uppercase mb-1 block">เรื่อง</label>
+                        <textarea id="subject" rows="2" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none" required></textarea>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="text-xs font-bold text-slate-500 uppercase mb-1 block">หมายเหตุ</label>
+                        <input type="text" id="remarks" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="ระบุเพิ่มเติม (ถ้ามี)">
+                    </div>
+                    <div class="md:col-span-2 p-4 bg-blue-50 rounded-xl border border-blue-100 flex flex-col md:flex-row gap-4">
+                        <div class="flex-1">
+                            <label class="text-xs font-bold text-blue-600 uppercase mb-1 block">ผู้รับผิดชอบ / กลุ่ม</label>
+                            <input type="text" id="assignee" class="w-full px-4 py-2 bg-white border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น กลุ่มงานการเงิน">
+                        </div>
+                        <div class="flex-1">
+                            <label class="text-xs font-bold text-slate-500 uppercase mb-1 block">ความเร่งด่วน</label>
+                            <select id="urgency" class="w-full px-4 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                                <option>ปกติ</option>
+                                <option>ด่วน</option>
+                                <option>ด่วนมาก</option>
+                                <option>ด่วนที่สุด</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-8 flex gap-3">
+                    <button type="button" onclick="closeModal()" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl font-semibold hover:bg-slate-50 transition-colors">ยกเลิก</button>
+                    <button type="submit" id="saveBtn" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all">บันทึกข้อมูล</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Success Summary Modal -->
+    <div id="summaryModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[60] hidden flex items-center justify-center p-4 no-print">
+        <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-8 duration-300">
+            <div class="p-8 text-center">
+                <div class="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl shadow-inner">✓</div>
+                <h3 class="text-2xl font-bold text-slate-800 mb-2">บันทึกสำเร็จ</h3>
+                <p class="text-slate-500 mb-6" id="summaryStatus">ข้อมูลถูกอัปเดตเรียบร้อยแล้ว</p>
+                <div id="summaryContent" class="bg-slate-50 rounded-2xl p-6 text-left border border-slate-100 space-y-3 mb-8"></div>
+                <button onclick="closeSummary()" class="w-full py-4 bg-slate-800 hover:bg-slate-900 text-white rounded-2xl font-bold shadow-lg transition-all active:scale-[0.98]">ตกลง</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 z-[100] hidden no-print animate-in slide-in-from-right-full">
+        <div id="toastContent" class="bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-2 border-l-4 border-blue-500"></div>
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- ตั้งค่าสำหรับ GOOGLE SHEETS ---
-        // ใส่ URL ที่ได้จากการ Deploy Google Apps Script ใน code.gs ที่นี่
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwF9F9udq2pv_FMpU3f4835Fq2DNCB0sHOA00lA3tZA3LoBspgzwZZgVaGwvHG2qL5Y-Q/exec"; // แก้ไขเป็น URL จริงของคุณ
-
+        // CONFIGURATION
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyIT5kfi61DUVwM-WNl1izG3XomAGryaBAmlP34c104BJbRkjF1yUdSc6x9z91yo-m_Dg/exec";
+        
         const firebaseConfig = {
-            apiKey: "AIzaSyDEuaxS9dIgAb5gsa7vAPHHRQn0UTatfZI",
-            authDomain: "dys001.firebaseapp.com",
-            projectId: "dys001",
-            storageBucket: "dys001.firebasestorage.app",
-            messagingSenderId: "1013251588946",
-            appId: "1:1013251588946:web:6529a0ead96c5ec70cf08b",
-            measurementId: "G-MR9J0662YD"
+            apiKey: "AIzaSyA258TyEa404C2tIFvgZk8oGikMmbFbNHM",
+            authDomain: "dys05-5dd7f.firebaseapp.com",
+            projectId: "dys05-5dd7f",
+            storageBucket: "dys05-5dd7f.firebasestorage.app",
+            messagingSenderId: "437973332825",
+            appId: "1:437973332825:web:0150c4e941a011583b5248"
         };
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'dys-registry-system';
         const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
         const auth = getAuth(app);
-        
-        let currentUser = null;
-        let allData = [];
-        let filteredData = [];
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'inbound-docs-manager';
+        const docCollection = collection(db, 'artifacts', appId, 'public', 'data', 'inbound_docs');
+
+        // STATE
+        let allDocs = [];
+        let filteredDocs = [];
         let currentPage = 1;
-        const itemsPerPage = 50;
-        let deleteId = null;
-        
-        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
+        const limit = 50;
+        let user = null;
 
-        signInAnonymously(auth);
+        // UI HELPERS
+        const showToast = (msg) => {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastContent').innerText = msg;
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3000);
+        };
 
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                currentUser = user;
-                loadData();
+        const formatThaiDate = (str) => {
+            if (!str) return '-';
+            return new Date(str).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' });
+        };
+
+        // AUTHENTICATION
+        const initAuth = async () => {
+            try {
+                await signInAnonymously(auth);
+            } catch (e) {
+                console.error("Auth failed:", e);
+                showToast("ไม่สามารถเชื่อมต่อระบบยืนยันตัวตนได้");
             }
-        });
+        };
 
-        function loadData() {
-            onSnapshot(colRef, (snapshot) => {
-                const data = [];
-                snapshot.forEach(doc => {
-                    const item = doc.data();
-                    data.push({ id: doc.id, ...item });
+        // DATA SYNC
+        const syncToSheets = async (data) => {
+            if (!GOOGLE_SCRIPT_URL) return false;
+            try {
+                const body = new URLSearchParams();
+                Object.entries(data).forEach(([k, v]) => {
+                    const val = (v && typeof v === 'object' && v.nanoseconds !== undefined) ? new Date().toISOString() : v;
+                    body.append(k, val || '');
                 });
-                allData = data;
-                applyFilters();
-                if(!document.getElementById('docId').value) generateNextRegNo(allData);
-            }, (error) => {
-                console.error("Firestore Error:", error);
+                await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body });
+                return true;
+            } catch (e) {
+                return false;
+            }
+        };
+
+        // CRUD OPERATIONS
+        window.handleSave = async (e) => {
+            e.preventDefault();
+            if (!user) return showToast("ไม่ได้เข้าสู่ระบบ");
+            
+            const btn = document.getElementById('saveBtn');
+            const id = document.getElementById('editId').value;
+            
+            btn.disabled = true;
+            btn.innerText = "กำลังบันทึก...";
+
+            const payload = {
+                receiveNo: document.getElementById('receiveNo').value,
+                receiveDate: document.getElementById('receiveDate').value,
+                docNo: document.getElementById('docNo').value,
+                docDate: document.getElementById('docDate').value,
+                from: document.getElementById('from').value,
+                to: document.getElementById('to').value,
+                subject: document.getElementById('subject').value,
+                remarks: document.getElementById('remarks').value,
+                assignee: document.getElementById('assignee').value,
+                urgency: document.getElementById('urgency').value,
+                updatedAt: serverTimestamp()
+            };
+
+            try {
+                if (id) {
+                    await updateDoc(doc(db, docCollection.path, id), payload);
+                } else {
+                    payload.createdAt = serverTimestamp();
+                    await addDoc(docCollection, payload);
+                }
+
+                const sheetStatus = await syncToSheets(payload);
+                closeModal();
+                
+                document.getElementById('summaryStatus').innerText = sheetStatus ? "บันทึกและซิงค์ข้อมูลสำเร็จ" : "บันทึกสำเร็จ (ซิงค์ Sheets ล้มเหลว)";
+                document.getElementById('summaryContent').innerHTML = `
+                    <div class="flex justify-between border-b pb-2"><span class="text-xs font-bold text-slate-400">เลขรับ</span><span class="font-bold text-blue-600">${payload.receiveNo}</span></div>
+                    <div class="text-sm"><span class="text-xs block font-bold text-slate-400">เรื่อง</span>${payload.subject}</div>
+                    <div class="grid grid-cols-2 gap-2 pt-2">
+                        <div><span class="text-[10px] font-bold text-slate-400 block">วันที่รับ</span><span class="text-xs">${formatThaiDate(payload.receiveDate)}</span></div>
+                        <div><span class="text-[10px] font-bold text-slate-400 block">สถานะ</span><span class="text-xs font-bold ${payload.urgency === 'ปกติ' ? 'text-green-600' : 'text-red-600'}">${payload.urgency}</span></div>
+                    </div>
+                `;
+                document.getElementById('summaryModal').classList.remove('hidden');
+            } catch (err) {
+                showToast("เกิดข้อผิดพลาดในการบันทึก");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "บันทึกข้อมูล";
+            }
+        };
+
+        window.deleteDoc = async (id) => {
+            if (confirm('ยืนยันการลบข้อมูลรายการนี้?')) {
+                try {
+                    await deleteDoc(doc(db, docCollection.path, id));
+                    showToast("ลบข้อมูลสำเร็จ");
+                } catch (e) {
+                    showToast("ลบข้อมูลไม่สำเร็จ");
+                }
+            }
+        };
+
+        // UI ACTIONS
+        window.openModal = (id = null) => {
+            const form = document.getElementById('docForm');
+            const modal = document.getElementById('docModal');
+            form.reset();
+            modal.classList.remove('hidden');
+
+            const receiveNoInput = document.getElementById('receiveNo');
+
+            if (id) {
+                const data = allDocs.find(d => d.id === id);
+                document.getElementById('modalTitle').innerText = 'แก้ไขข้อมูลหนังสือรับ';
+                document.getElementById('editId').value = id;
+                ['receiveNo', 'receiveDate', 'docNo', 'docDate', 'from', 'to', 'subject', 'remarks', 'assignee', 'urgency'].forEach(k => {
+                    document.getElementById(k).value = data[k] || '';
+                });
+            } else {
+                document.getElementById('modalTitle').innerText = 'ลงทะเบียนหนังสือรับใหม่';
+                document.getElementById('editId').value = '';
+                document.getElementById('receiveDate').value = new Date().toISOString().split('T')[0];
+                document.getElementById('from').value = "สพป.นราธิวาส เขต 3";
+                document.getElementById('to').value = "ผู้อำนวยการ";
+                
+                // Auto-suggest next number
+                const currentYear = new Date().getFullYear() + 543;
+                const yearPrefix = `/${currentYear}`;
+                const yearDocs = allDocs.filter(d => d.receiveNo?.endsWith(yearPrefix));
+                const nums = yearDocs.map(d => parseInt(d.receiveNo.split('/')[0])).filter(n => !isNaN(n));
+                const nextNum = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
+                receiveNoInput.value = `${nextNum}${yearPrefix}`;
+            }
+        };
+
+        window.closeModal = () => document.getElementById('docModal').classList.add('hidden');
+        window.closeSummary = () => document.getElementById('summaryModal').classList.add('hidden');
+        
+        window.handleSearch = () => { currentPage = 1; render(); };
+        window.prevPage = () => { if (currentPage > 1) { currentPage--; render(); } };
+        window.nextPage = () => { if (currentPage < Math.ceil(filteredDocs.length / limit)) { currentPage++; render(); } };
+        window.setPage = (p) => { currentPage = p; render(); };
+
+        window.handlePrint = () => {
+            document.getElementById('printDate').innerText = new Date().toLocaleString('th-TH');
+            
+            // SORTING: Ascending for report
+            const sortedPrint = [...filteredDocs].sort((a, b) => {
+                const [numA, yearA] = a.receiveNo.split('/').map(Number);
+                const [numB, yearB] = b.receiveNo.split('/').map(Number);
+                if (yearA !== yearB) return yearA - yearB;
+                return numA - numB;
             });
-        }
+            
+            const tbody = document.getElementById('documentTableBody');
+            tbody.innerHTML = sortedPrint.map(d => generateRowHTML(d, true)).join('');
+            window.print();
+            render(); 
+        };
 
-        function applyFilters() {
-            const term = document.getElementById('searchInput').value.toLowerCase().trim();
-            let baseData = [...allData];
-
-            if (term) {
-                baseData = baseData.filter(item => 
-                    (item.reg_no && item.reg_no.toLowerCase().includes(term)) ||
-                    (item.doc_no && item.doc_no.toLowerCase().includes(term)) ||
-                    (item.subject && item.subject.toLowerCase().includes(term))
-                );
-            }
-
-            baseData.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-
-            filteredData = baseData;
-            renderTable();
-            renderPagination();
-        }
-
-        function renderTable() {
-            const tbody = document.getElementById('tableBody');
-            const startIndex = (currentPage - 1) * itemsPerPage;
-            const displayData = filteredData.slice(startIndex, startIndex + itemsPerPage);
-
-            if (displayData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" class="p-10 text-center text-slate-400">ไม่พบข้อมูล</td></tr>`;
-                return;
-            }
-
-            tbody.innerHTML = displayData.map(item => `
-                <tr class="hover:bg-slate-50">
-                    <td class="p-4 text-center">${item.date_received_thai || '-'}</td>
-                    <td class="p-4 text-center font-bold text-indigo-700">${item.reg_no}</td>
-                    <td class="p-4 text-center text-slate-500 text-xs">${item.doc_no}</td>
-                    <td class="p-4 text-center text-slate-500">${item.doc_date_thai || '-'}</td>
-                    <td class="p-4 text-xs">${item.from_dept}</td>
-                    <td class="p-4 text-xs">${item.to_dept}</td>
-                    <td class="p-4 font-bold text-slate-800">${item.subject}</td>
-                    <td class="p-4 text-center no-print">
-                        <div class="flex items-center justify-center gap-2">
-                            <button onclick="window.editItem('${item.id}')" class="text-indigo-600 font-bold hover:underline">แก้ไข</button>
-                            <span class="text-slate-300">|</span>
-                            <button onclick="window.confirmDelete('${item.id}')" class="text-red-500 font-bold hover:underline">ลบ</button>
+        const generateRowHTML = (d, forPrint = false) => {
+            const urgencyClass = (d.urgency === 'ปกติ' || !d.urgency) ? 'urgency-normal' : 'urgency-urgent';
+            const urgencyDisplay = forPrint ? d.urgency || 'ปกติ' : `<span class="urgency-badge ${urgencyClass}">${d.urgency || 'ปกติ'}</span>`;
+            
+            return `
+                <tr class="hover:bg-blue-50/40 transition-colors border-b">
+                    <td class="px-2 py-3 text-slate-500">${formatThaiDate(d.receiveDate)}</td>
+                    <td class="px-2 py-3 font-bold text-blue-700">${d.receiveNo}</td>
+                    <td class="px-2 py-3 text-center">${urgencyDisplay}</td>
+                    <td class="px-2 py-3 font-mono font-bold text-slate-600">${d.docNo}</td>
+                    <td class="px-2 py-3 text-slate-500">${formatThaiDate(d.docDate)}</td>
+                    <td class="px-2 py-3 truncate max-w-[120px]" title="${d.from}">${d.from}</td>
+                    <td class="px-2 py-3 font-medium text-blue-600">${d.to || '-'}</td>
+                    <td class="px-2 py-3 font-medium text-slate-800 leading-snug">${d.subject}</td>
+                    <td class="px-2 py-3"><span class="text-[11px] px-1 py-1 bg-slate-100 text-slate-600 rounded break-words">${d.assignee || '-'}</span></td>
+                    <td class="px-2 py-3 text-slate-400 italic text-[11px]">${d.remarks || '-'}</td>
+                    <td class="px-2 py-3 text-center no-print">
+                        <div class="flex items-center justify-center gap-1">
+                            <button onclick="openModal('${d.id}')" class="text-blue-500 hover:bg-blue-50 w-8 h-8 rounded-full flex items-center justify-center transition-colors">✎</button>
+                            <button onclick="deleteDoc('${d.id}')" class="text-red-300 hover:text-red-500 hover:bg-red-50 w-8 h-8 rounded-full flex items-center justify-center transition-colors">🗑</button>
                         </div>
                     </td>
                 </tr>
-            `).join('');
-
-            document.getElementById('paginationInfo').innerText = `พบ ${filteredData.length} รายการ`;
-        }
-
-        function renderPagination() {
-            const container = document.getElementById('paginationControls');
-            const totalPages = Math.ceil(filteredData.length / itemsPerPage);
-            if (totalPages <= 1) { container.innerHTML = ''; return; }
-
-            let html = '';
-            for (let i = 1; i <= totalPages; i++) {
-                html += `<button onclick="window.changePage(${i})" class="w-8 h-8 rounded-lg font-bold ${currentPage === i ? 'bg-indigo-600 text-white' : 'hover:bg-slate-200'}">${i}</button>`;
-            }
-            container.innerHTML = html;
-        }
-
-        window.changePage = (p) => { currentPage = p; renderTable(); renderPagination(); };
-
-        window.printToNewWindow = () => {
-            const printData = [...filteredData].sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
-            const printWindow = window.open('', '_blank');
-            const html = `
-                <!DOCTYPE html>
-                <html lang="th">
-                <head>
-                    <meta charset="UTF-8">
-                    <title>รายงานทะเบียนหนังสือรับ - ${new Date().toLocaleDateString('th-TH')}</title>
-                    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
-                    <style>
-                        body { font-family: 'Sarabun', sans-serif; padding: 20px; color: #000; }
-                        h1 { text-align: center; font-size: 18pt; margin-bottom: 20px; }
-                        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-                        th, td { border: 1px solid #333; padding: 6px 4px; font-size: 10pt; word-wrap: break-word; }
-                        th { background-color: #f2f2f2; font-weight: bold; text-align: center; }
-                        thead { display: table-header-group; }
-                        tr { page-break-inside: avoid; }
-                        @page { size: landscape; margin: 1cm; }
-                    </style>
-                </head>
-                <body>
-                    <h1>ทะเบียนหนังสือรับ</h1>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width: 10%;">วันที่รับ</th>
-                                <th style="width: 10%;">ทะเบียนรับ</th>
-                                <th style="width: 12%;">ที่</th>
-                                <th style="width: 10%;">ลงวันที่</th>
-                                <th style="width: 14%;">จาก</th>
-                                <th style="width: 14%;">ถึง</th>
-                                <th style="width: 30%;">เรื่อง</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${printData.map(item => `
-                                <tr>
-                                    <td class="text-center">${item.date_received_thai || '-'}</td>
-                                    <td class="text-center" style="font-weight: bold;">${item.reg_no}</td>
-                                    <td class="text-center">${item.doc_no}</td>
-                                    <td class="text-center">${item.doc_date_thai || '-'}</td>
-                                    <td>${item.from_dept}</td>
-                                    <td>${item.to_dept}</td>
-                                    <td style="font-weight: bold;">${item.subject}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                    <script>window.onload = function() { window.print(); };<\/script>
-                </body>
-                </html>
             `;
-            printWindow.document.write(html);
-            printWindow.document.close();
         };
 
-        function generateNextRegNo(data) {
-            const currentYear = "2569";
-            let maxNum = 242;
-            data.forEach(item => {
-                if(item.reg_no && item.reg_no.includes('/' + currentYear)) {
-                    const num = parseInt(item.reg_no.split('/')[0]);
-                    if(num > maxNum) maxNum = num;
-                }
+        const render = () => {
+            const keyword = document.getElementById('searchInput').value.toLowerCase();
+            filteredDocs = allDocs.filter(d => 
+                (d.subject || "").toLowerCase().includes(keyword) || 
+                (d.receiveNo || "").toLowerCase().includes(keyword) ||
+                (d.docNo || "").toLowerCase().includes(keyword) ||
+                (d.from || "").toLowerCase().includes(keyword)
+            ).sort((a,b) => {
+                const da = new Date(a.receiveDate), db = new Date(b.receiveDate);
+                if (db - da !== 0) return db - da;
+                
+                const [numA, yearA] = a.receiveNo.split('/').map(Number);
+                const [numB, yearB] = b.receiveNo.split('/').map(Number);
+                if (yearB !== yearA) return yearB - yearA;
+                return numB - numA;
             });
-            document.getElementById('reg_no').value = (maxNum + 1) + "/" + currentYear;
-        }
 
-        // ฟังก์ชันหลักในการบันทึกข้อมูล
-        document.getElementById('recordForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const raw = Object.fromEntries(formData.entries());
-            const thaiReceived = formatThaiDate(new Date(raw.date_received));
-            const thaiDocDate = formatThaiDate(new Date(raw.doc_date));
-            const payload = { ...raw, date_received_thai: thaiReceived, doc_date_thai: thaiDocDate, updatedAt: serverTimestamp() };
+            const total = filteredDocs.length;
+            const pages = Math.ceil(total / limit) || 1;
+            const start = (currentPage - 1) * limit;
+            const view = filteredDocs.slice(start, start + limit);
 
-            try {
-                // 1. บันทึกลง FIREBASE (เพื่อความเร็วและ Real-time)
-                if (raw.docId) {
-                    await updateDoc(doc(db, colRef.path, raw.docId), payload);
-                    showToast("แก้ไขข้อมูลใน Firebase สำเร็จ", "bg-indigo-600");
-                    // สำหรับ Update ใน Google Sheets ต้องระบุ rowIndex ซึ่งซับซ้อนกว่าในตัวอย่างนี้ 
-                    // จึงแนะนำให้ไปแก้ไขที่ Sheets โดยตรง หรือใช้ปุ่มแก้ไขข้อมูลใหม่
-                } else {
-                    payload.createdAt = serverTimestamp();
-                    await addDoc(colRef, payload);
-                    
-                    // 2. บันทึกลง GOOGLE SHEETS (เพื่อการสำรองข้อมูลระยะยาว)
-                    // ส่งข้อมูลแบบ POST ไปยัง Google Apps Script URL
-                    if (SCRIPT_URL && SCRIPT_URL !== "URL_HERE") {
-                        try {
-                            const sheetsPayload = {
-                                action: 'insert',
-                                date_received: thaiReceived,
-                                reg_no: raw.reg_no,
-                                doc_no: raw.doc_no,
-                                doc_date: thaiDocDate,
-                                from_dept: raw.from_dept,
-                                to_dept: raw.to_dept,
-                                subject: raw.subject
-                            };
+            document.getElementById('countDisplay').innerText = `พบทั้งหมด ${total} รายการ`;
+            document.getElementById('paginationInfo').innerText = `รายการที่ ${total > 0 ? start+1 : 0} - ${Math.min(start+limit, total)} จาก ${total}`;
+            
+            const tbody = document.getElementById('documentTableBody');
+            tbody.innerHTML = view.map(d => generateRowHTML(d)).join('');
 
-                            // ส่งข้อมูลโดยไม่รอผลตอบกลับ เพื่อความเร็วหน้าเว็บ
-                            fetch(SCRIPT_URL, {
-                                method: 'POST',
-                                mode: 'no-cors', // สำคัญ: เพื่อไม่ให้ติด CORS เมื่อส่งข้ามโดเมน
-                                cache: 'no-cache',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(sheetsPayload)
-                            });
-                        } catch (sheetErr) {
-                            console.error("Sync to Sheets Error:", sheetErr);
-                        }
-                    }
+            const pNums = document.getElementById('pageNumbers');
+            pNums.innerHTML = '';
+            for (let i = Math.max(1, currentPage-2); i <= Math.min(pages, currentPage+2); i++) {
+                pNums.innerHTML += `
+                    <button onclick="setPage(${i})" class="w-9 h-9 rounded-lg text-sm font-bold transition-all ${i === currentPage ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'border border-slate-200 hover:bg-slate-50 text-slate-600'}">
+                        ${i}
+                    </button>
+                `;
+            }
+            document.getElementById('prevBtn').disabled = currentPage === 1;
+            document.getElementById('nextBtn').disabled = currentPage === pages;
+        };
 
-                    showSummaryModal(payload); // แสดงป็อปอัพสรุป
-                }
-                window.resetForm();
-            } catch (error) {
-                console.error("Save Error:", error);
-                showToast("เกิดข้อผิดพลาดในการบันทึก", "bg-red-500");
+        onAuthStateChanged(auth, (u) => {
+            user = u;
+            if (u) {
+                onSnapshot(docCollection, (snap) => {
+                    allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    render();
+                    document.getElementById('loading').classList.add('hidden');
+                }, (err) => {
+                    console.error("Snapshot error:", err);
+                    showToast("ไม่สามารถดึงข้อมูลได้");
+                });
             }
         });
 
-        function showSummaryModal(data) {
-            const content = document.getElementById('summaryContent');
-            const fields = [
-                { label: "วันที่รับ", value: data.date_received_thai },
-                { label: "ทะเบียนรับ", value: data.reg_no, bold: true },
-                { label: "ที่", value: data.doc_no },
-                { label: "ลงวันที่", value: data.doc_date_thai },
-                { label: "จาก", value: data.from_dept },
-                { label: "ถึง", value: data.to_dept },
-                { label: "เรื่อง", value: data.subject, bold: true }
-            ];
-
-            content.innerHTML = fields.map(f => `
-                <div class="flex flex-col border-b border-slate-100 pb-1.5">
-                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">${f.label}</span>
-                    <span class="text-sm text-slate-800 ${f.bold ? 'font-bold text-indigo-600' : ''}">${f.value || '-'}</span>
-                </div>
-            `).join('');
-
-            document.getElementById('summaryModal').classList.remove('hidden');
-        }
-
-        window.editItem = (id) => {
-            const item = allData.find(d => d.id === id);
-            if(!item) return;
-            document.getElementById('docId').value = id;
-            document.getElementById('reg_no').value = item.reg_no;
-            document.getElementById('doc_no').value = item.doc_no;
-            document.getElementById('from_dept').value = item.from_dept;
-            document.getElementById('to_dept').value = item.to_dept;
-            document.getElementById('subject').value = item.subject;
-            document.getElementById('date_received').value = item.date_received;
-            document.getElementById('doc_date').value = item.doc_date;
-            document.getElementById('cancelBtn').classList.remove('hidden');
-            document.getElementById('formTitle').innerText = "แก้ไขข้อมูลหนังสือ";
-            document.getElementById('submitBtn').innerText = "บันทึกการแก้ไข";
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        };
-
-        window.confirmDelete = (id) => {
-            deleteId = id;
-            document.getElementById('deleteModal').classList.remove('hidden');
-        };
-
-        document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
-            if (deleteId) {
-                try {
-                    await deleteDoc(doc(db, colRef.path, deleteId));
-                    document.getElementById('deleteModal').classList.add('hidden');
-                    showToast("ลบข้อมูลจากระบบสำเร็จ (ใน Sheets ไม่ได้ลบอัตโนมัติ)", "bg-red-500");
-                } catch (error) {
-                    console.error("Delete Error:", error);
-                }
-                deleteId = null;
-            }
-        });
-
-        function showToast(message, bgColor) {
-            const toast = document.getElementById('toast');
-            const msg = document.getElementById('toastMessage');
-            toast.className = `flex items-center gap-3 text-white shadow-2xl ${bgColor}`;
-            msg.innerText = message;
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 3000);
-        }
-
-        window.resetForm = () => {
-            document.getElementById('recordForm').reset();
-            document.getElementById('docId').value = "";
-            document.getElementById('cancelBtn').classList.add('hidden');
-            document.getElementById('formTitle').innerText = "ลงทะเบียนหนังสือใหม่";
-            document.getElementById('submitBtn').innerText = "บันทึกข้อมูล";
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('date_received').value = today;
-            document.getElementById('doc_date').value = today;
-            document.getElementById('to_dept').value = "ผู้อำนวยการ";
-            if(allData.length > 0) generateNextRegNo(allData);
-        };
-
-        function formatThaiDate(date) {
-            const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-            return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear() + 543}`;
-        }
-
-        document.getElementById('searchInput').addEventListener('input', applyFilters);
-
-        window.resetForm();
+        initAuth();
     </script>
 </body>
 </html>
